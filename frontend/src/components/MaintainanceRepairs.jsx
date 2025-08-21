@@ -30,7 +30,10 @@ export default function MaintenanceRepairs() {
     const [selectedCategory, setSelectedCategory] = useState('');
     const [filteredRecords, setFilteredRecords] = useState([]);
     const [formData, setFormData] = useState({
-        vehicle: '', category: '', type: '', date: new Date().toISOString().split('T')[0],
+        vehicle: '', category: '', type: '',
+        maintenanceDetails: '',
+        dateIn: new Date().toISOString().split('T')[0], timeIn: '',
+        dateOut: '', timeOut: '', removeDate: '',
         electricalCost: '', fabricationCost: '', insuranceCost: '', otherCost: '',
         status: 'Scheduled', description: '', technician: '', partsUsed: ''
     });
@@ -42,7 +45,8 @@ export default function MaintenanceRepairs() {
 
     useEffect(() => {
         let records = maintenanceRecords;
-        if (selectedMonth) records = records.filter(r => r.date?.startsWith(selectedMonth));
+        // Updated to filter by dateIn
+        if (selectedMonth) records = records.filter(r => r.dateIn?.startsWith(selectedMonth));
 
         let stationsToFilter = selectedStation ? [selectedStation] : selectedRegion ? regions[selectedRegion] : [];
         if (stationsToFilter.length > 0) {
@@ -72,7 +76,10 @@ export default function MaintenanceRepairs() {
 
     const resetForm = () => {
         setFormData({
-            vehicle: '', category: '', type: '', date: new Date().toISOString().split('T')[0],
+            vehicle: '', category: '', type: '',
+            maintenanceDetails: '',
+            dateIn: new Date().toISOString().split('T')[0], timeIn: '',
+            dateOut: '', timeOut: '', removeDate: '',
             electricalCost: '', fabricationCost: '', insuranceCost: '', otherCost: '',
             status: 'Scheduled', description: '', technician: '', partsUsed: ''
         });
@@ -88,6 +95,16 @@ export default function MaintenanceRepairs() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         const payload = { ...formData, electricalCost: parseFloat(formData.electricalCost) || 0, fabricationCost: parseFloat(formData.fabricationCost) || 0, insuranceCost: parseFloat(formData.insuranceCost) || 0, otherCost: parseFloat(formData.otherCost) || 0 };
+
+        // Combine date and time fields into ISO strings, handle empty fields
+        payload.dateIn = formData.dateIn ? new Date(`${formData.dateIn}T${formData.timeIn || '00:00:00'}`).toISOString() : null;
+        payload.dateOut = formData.dateOut ? new Date(`${formData.dateOut}T${formData.timeOut || '00:00:00'}`).toISOString() : null;
+        payload.removeDate = formData.removeDate ? new Date(formData.removeDate).toISOString() : null;
+
+        // Remove temporary state fields before sending
+        delete payload.timeIn;
+        delete payload.timeOut;
+
         try {
             if (editingId) await api.put(`/maintenance/${editingId}`, payload);
             else await api.post('/maintenance', payload);
@@ -102,9 +119,16 @@ export default function MaintenanceRepairs() {
 
     const handleEdit = (record) => {
         setEditingId(record._id);
+
+        const formatDate = (dateStr) => dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
+        const formatTime = (dateStr) => dateStr ? new Date(dateStr).toTimeString().slice(0, 5) : '';
+
         setFormData({
             vehicle: record.vehicle?._id || '', category: record.category || '', type: record.type || '',
-            date: new Date(record.date).toISOString().split('T')[0],
+            maintenanceDetails: record.maintenanceDetails || '',
+            dateIn: formatDate(record.dateIn), timeIn: formatTime(record.dateIn),
+            dateOut: formatDate(record.dateOut), timeOut: formatTime(record.dateOut),
+            removeDate: formatDate(record.removeDate),
             electricalCost: record.electricalCost || '', fabricationCost: record.fabricationCost || '',
             insuranceCost: record.insuranceCost || '', otherCost: record.otherCost || '',
             status: record.status || 'Scheduled', description: record.description || '',
@@ -125,7 +149,12 @@ export default function MaintenanceRepairs() {
     const handleExportToExcel = () => {
         if (filteredRecords.length === 0) return alert('No data to export.');
         const exportData = filteredRecords.map(r => ({
-            'Vehicle': r.vehicle?.callsign || 'N/A', 'Category': r.category, 'Type': r.type, 'Date': new Date(r.date).toLocaleDateString(), 'Status': r.status,
+            'Vehicle': r.vehicle?.callsign || 'N/A', 'Category': r.category, 'Type': r.type,
+            'Maintenance Details': r.maintenanceDetails,
+            'Date In': r.dateIn ? new Date(r.dateIn).toLocaleString() : '',
+            'Date Out': r.dateOut ? new Date(r.dateOut).toLocaleString() : '',
+            'Remove Date': r.removeDate ? new Date(r.removeDate).toLocaleDateString() : '',
+            'Status': r.status,
             'Electrical Cost (Rs.)': r.electricalCost || 0, 'Fabrication Cost (Rs.)': r.fabricationCost || 0, 'Insurance Cost (Rs.)': r.insuranceCost || 0, 'Other Cost (Rs.)': r.otherCost || 0,
             'Total Cost (Rs.)': (r.electricalCost || 0) + (r.fabricationCost || 0) + (r.insuranceCost || 0) + (r.otherCost || 0),
             'Technician': r.technician, 'Parts Used': r.partsUsed, 'Description': r.description
@@ -139,7 +168,24 @@ export default function MaintenanceRepairs() {
     const selectedVehicleObject = vehicles.find(v => v._id === formData.vehicle);
     const currentStation = selectedVehicleObject ? selectedVehicleObject.registeredCity : 'Select a Vehicle';
     const stationsForRegion = selectedRegion ? regions[selectedRegion] : allStations;
+
+    // This correctly filters vehicles for the MAIN page filter dropdown
     const filteredVehicleOptions = selectedStation ? vehicles.filter(v => v.registeredCity === selectedStation) : (selectedRegion ? vehicles.filter(v => regions[selectedRegion].includes(v.registeredCity)) : vehicles);
+
+    // This is the list for the MODAL dropdown. It starts with the filtered list.
+    const modalVehicleOptions = [...filteredVehicleOptions];
+
+    // If we're editing, ensure the vehicle being edited is in the list, even if it doesn't match the current filter.
+    if (editingId && formData.vehicle) {
+        const isVehicleInList = modalVehicleOptions.some(v => v._id === formData.vehicle);
+        if (!isVehicleInList) {
+            const vehicleToEdit = vehicles.find(v => v._id === formData.vehicle);
+            if (vehicleToEdit) {
+                modalVehicleOptions.unshift(vehicleToEdit); // Add it to the top of the list
+            }
+        }
+    }
+
     const totalFormCost = (parseFloat(formData.electricalCost) || 0) + (parseFloat(formData.fabricationCost) || 0) + (parseFloat(formData.insuranceCost) || 0) + (parseFloat(formData.otherCost) || 0);
 
     return (
@@ -168,7 +214,7 @@ export default function MaintenanceRepairs() {
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Vehicle</th>
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Category</th>
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Type</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Date</th>
+                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Date In</th>
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Status</th>
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Electrical Cost</th>
                                 <th className="px-6 py-3 text-left font-semibold text-gray-600">Fabrication Cost</th>
@@ -187,7 +233,7 @@ export default function MaintenanceRepairs() {
                                         <td className="px-6 py-4 font-medium text-gray-800">{record.vehicle?.callsign || 'N/A'}</td>
                                         <td className="px-6 py-4 text-gray-600">{record.category}</td>
                                         <td className="px-6 py-4 text-gray-600">{record.type}</td>
-                                        <td className="px-6 py-4 text-gray-600">{new Date(record.date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 text-gray-600">{record.dateIn ? new Date(record.dateIn).toLocaleString() : 'N/A'}</td>
                                         <td className="px-6 py-4"><span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{record.status}</span></td>
                                         <td className="px-6 py-4 text-gray-600">Rs. {(record.electricalCost || 0).toFixed(2)}</td>
                                         <td className="px-6 py-4 text-gray-600">Rs. {(record.fabricationCost || 0).toFixed(2)}</td>
@@ -214,14 +260,33 @@ export default function MaintenanceRepairs() {
             {showModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg p-8 w-full max-w-4xl shadow-xl max-h-[95vh] overflow-y-auto">
-                        <h2 className="text-xl font-bold mb-6 text-gray-800">Add Maintenance Record</h2>
+                        <h2 className="text-xl font-bold mb-6 text-gray-800">{editingId ? 'Edit Maintenance Record' : 'Add Maintenance Record'}</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label><select required name="vehicle" value={formData.vehicle} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"><option value="">Select a vehicle</option>{vehicles.map((v) => (<option key={v._id} value={v._id}>{v.callsign} - {v.name}</option>))}</select></div>
+                                {/* --- THE ONLY CHANGE IS HERE --- */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
+                                    <select required name="vehicle" value={formData.vehicle} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                                        <option value="">Select a vehicle</option>
+                                        {/* Use the filtered list for the modal */}
+                                        {modalVehicleOptions.map((v) => (
+                                            <option key={v._id} value={v._id}>{v.callsign} - {v.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                {/* --- END OF CHANGE --- */}
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Station</label><input type="text" value={currentStation} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-gray-100" /></div>
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Category</label><select name="category" required value={formData.category} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"><option value="">Select Category</option>{maintenanceCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select name="type" required value={formData.type} onChange={handleChange} disabled={!formData.category} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100"><option value="">Select Type</option>{formData.category && maintenanceTypes[formData.category].map(type => (<option key={type} value={type}>{type}</option>))}</select></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Date</label><input type="date" name="date" required value={formData.date} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                                <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Details</label><input type="text" name="maintenanceDetails" value={formData.maintenanceDetails} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                            </div>
+                            <hr />
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Date In</label><input type="date" name="dateIn" required value={formData.dateIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Time In</label><input type="time" name="timeIn" value={formData.timeIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                                <div className="md:col-start-1"><label className="block text-sm font-medium text-gray-700 mb-1">Date Out</label><input type="date" name="dateOut" value={formData.dateOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Time Out</label><input type="time" name="timeOut" value={formData.timeOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Remove Date</label><input type="date" name="removeDate" value={formData.removeDate} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
                                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select name="status" value={formData.status} onChange={handleChange} className="w-full px-3 py-2 border rounded-md"><option value="Scheduled">Scheduled</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option></select></div>
                             </div>
                             <hr />

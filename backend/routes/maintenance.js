@@ -1,3 +1,4 @@
+
 import express from 'express';
 import Maintenance from '../models/Maintenance.js';
 import Vehicle from '../models/Vehicle.js';
@@ -7,27 +8,28 @@ const router = express.Router();
 
 // Helper function to update vehicle service milestones
 const updateVehicleMilestones = async (maintenanceRecord) => {
-    const vehicle = await Vehicle.findById(maintenanceRecord.vehicle);
-    if (!vehicle) return;
+  const vehicle = await Vehicle.findById(maintenanceRecord.vehicle);
+  if (!vehicle) return;
 
-    const maintenanceType = maintenanceRecord.type.toLowerCase();
-    const update = {};
+  const maintenanceType = maintenanceRecord.type.toLowerCase();
+  const update = {};
 
-    // Check for tire-related keywords to update the specific tire milestone
-    if (maintenanceType.includes('tire') || maintenanceType.includes('tyre')) {
-        update.lastTireChangeActivity = vehicle.mileage;
-    } else {
-        // Assume any other completed job is a general preventive maintenance (PM)
-        update.lastService = vehicle.mileage;
-    }
-    
-    await Vehicle.findByIdAndUpdate(vehicle._id, update);
+  // Check for tire-related keywords to update the specific tire milestone
+  if (maintenanceType.includes('tire') || maintenanceType.includes('tyre')) {
+    update.lastTireChangeActivity = vehicle.mileage;
+  } else {
+    // Assume any other completed job is a general preventive maintenance (PM)
+    update.lastService = vehicle.mileage;
+  }
+
+  await Vehicle.findByIdAndUpdate(vehicle._id, update);
 };
 
 // GET all maintenance records
 router.get('/', authenticate, async (req, res) => {
   try {
-    const maintenanceRecords = await Maintenance.find().populate('vehicle', 'callsign').sort({ date: -1 });
+    // Sort by the new 'dateIn' field instead of 'date'
+    const maintenanceRecords = await Maintenance.find().populate('vehicle', 'callsign').sort({ dateIn: -1 });
     res.json(maintenanceRecords);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -42,7 +44,7 @@ router.post('/', authenticate, async (req, res) => {
 
     // If the job is marked as 'Completed', update the vehicle's milestones
     if (maintenance.status === 'Completed') {
-        await updateVehicleMilestones(maintenance);
+      await updateVehicleMilestones(maintenance);
     }
 
     await maintenance.populate('vehicle', 'callsign');
@@ -54,30 +56,30 @@ router.post('/', authenticate, async (req, res) => {
 
 // PUT (Update) a maintenance record by ID
 router.put('/:id', authenticate, async (req, res) => {
-    try {
-        const maintenance = await Maintenance.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('vehicle', 'callsign');
-        if (!maintenance) return res.status(404).json({ message: 'Maintenance record not found' });
+  try {
+    const maintenance = await Maintenance.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('vehicle', 'callsign');
+    if (!maintenance) return res.status(404).json({ message: 'Maintenance record not found' });
 
-        // If the job is marked as 'Completed', update the vehicle's milestones
-        if (maintenance.status === 'Completed') {
-            await updateVehicleMilestones(maintenance);
-        }
-
-        res.json(maintenance);
-    } catch (error) {
-        res.status(400).json({ message: error.message });
+    // If the job is marked as 'Completed', update the vehicle's milestones
+    if (maintenance.status === 'Completed') {
+      await updateVehicleMilestones(maintenance);
     }
+
+    res.json(maintenance);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
 });
 
 // DELETE a maintenance record by ID
 router.delete('/:id', authenticate, async (req, res) => {
-    try {
-        const maintenance = await Maintenance.findByIdAndDelete(req.params.id);
-        if (!maintenance) return res.status(404).json({ message: 'Maintenance record not found' });
-        res.json({ message: 'Maintenance record deleted' });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
+  try {
+    const maintenance = await Maintenance.findByIdAndDelete(req.params.id);
+    if (!maintenance) return res.status(404).json({ message: 'Maintenance record not found' });
+    res.json({ message: 'Maintenance record deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 export default router;
