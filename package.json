@@ -12,9 +12,11 @@
   "type": "commonjs",
   "dependencies": {
     "docx": "^9.5.1",
+    "docxtemplater": "^3.66.3",
     "file-saver": "^2.0.5",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
+    "pizzip": "^3.2.0",
     "xlsx": "^0.18.5"
   }
 }

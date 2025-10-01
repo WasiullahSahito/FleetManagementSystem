@@ -10,11 +10,17 @@ const maintenanceSchema = new mongoose.Schema({
   dateOut: { type: Date },
   removeDate: { type: Date },
 
-  // UPDATED COST FIELDS (replaces partsCost)
+  // UPDATED COST FIELDS
   electricalCost: { type: Number, default: 0 },
   fabricationCost: { type: Number, default: 0 },
   insuranceCost: { type: Number, default: 0 },
   otherCost: { type: Number, default: 0 },
+
+  // --- NEW: Added to store detailed cost breakdown from the form ---
+  detailedCosts: {
+    type: Map,
+    of: String
+  },
 
   status: { type: String, enum: ['Scheduled', 'In Progress', 'Completed'], default: 'Scheduled' },
   description: { type: String },

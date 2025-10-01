@@ -1,7 +1,6 @@
-
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash, Car, X, CheckCircle, AlertTriangle, Settings, MapPin } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Plus, Edit, Trash, Car, X, CheckCircle, AlertTriangle, Settings, MapPin, Eye } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import api from '../api';
 
 const vehicleConfigs = {
@@ -97,12 +96,12 @@ export default function VehicleProfiles() {
     const [showModal, setShowModal] = useState(false);
     const [loading, setLoading] = useState(true);
     const [stationMetrics, setStationMetrics] = useState(null);
-    const navigate = useNavigate();
+    const [selectedVehicleId, setSelectedVehicleId] = useState('');
+    const [selectedVehicleObject, setSelectedVehicleObject] = useState(null);
     const [formData, setFormData] = useState({
         name: '', callsign: '', model: '', year: new Date().getFullYear(), mileage: '', status: 'OnRoad Fleet',
         chassisNo: '', engineNo: '', registrationNo: '', fuelType: 'Petrol',
-        transmission: 'Manual', engineCapacity: '', registeredCity: '', ownerName: '', pmInterval: 10000,
-        fuelTankCapacity: ''
+        transmission: 'Manual', engineCapacity: '', registeredCity: '', ownerName: ''
     });
     const [mainImageFile, setMainImageFile] = useState(null);
     const [damagePoints, setDamagePoints] = useState([]);
@@ -114,6 +113,15 @@ export default function VehicleProfiles() {
     useEffect(() => {
         fetchData();
     }, []);
+
+    useEffect(() => {
+        if (selectedVehicleId) {
+            const vehicle = vehicles.find(v => v._id === selectedVehicleId);
+            setSelectedVehicleObject(vehicle);
+        } else {
+            setSelectedVehicleObject(null);
+        }
+    }, [selectedVehicleId, vehicles]);
 
     useEffect(() => {
         const config = getVehicleConfig(formData.name);
@@ -223,14 +231,49 @@ export default function VehicleProfiles() {
         setFormData({
             name: '', callsign: '', model: '', year: new Date().getFullYear(), mileage: '', status: 'OnRoad Fleet',
             chassisNo: '', engineNo: '', registrationNo: '', fuelType: 'Petrol',
-            transmission: 'Manual', engineCapacity: '', registeredCity: '', ownerName: '', pmInterval: 10000,
-            fuelTankCapacity: ''
+            transmission: 'Manual', engineCapacity: '', registeredCity: '', ownerName: ''
         });
         setMainImageFile(null);
         setDamagePoints([]);
         setNewDamagePoint({ type: 'D', location: '', notes: '', file: null });
         setEditingId(null);
         setEditingDamageIndex(null);
+    };
+
+    const handleEdit = (vehicle) => {
+        setEditingId(vehicle._id);
+        setFormData({
+            name: vehicle.name || '',
+            callsign: vehicle.callsign || '',
+            model: vehicle.model || '',
+            year: vehicle.year || '',
+            mileage: vehicle.mileage || '',
+            status: vehicle.status || 'OnRoad Fleet',
+            chassisNo: vehicle.chassisNo || '',
+            engineNo: vehicle.engineNo || '',
+            registrationNo: vehicle.registrationNo || '',
+            fuelType: vehicle.fuelType || 'Petrol',
+            transmission: vehicle.transmission || 'Manual',
+            engineCapacity: vehicle.engineCapacity || '',
+            registeredCity: vehicle.registeredCity || '',
+            ownerName: vehicle.ownerName || '',
+        });
+        setMainImageFile(null);
+        setDamagePoints(vehicle.damagePoints || []);
+        setShowModal(true);
+    };
+
+    const handleDelete = async (vehicleId) => {
+        if (window.confirm('Are you sure you want to delete this vehicle and all its associated records? This action cannot be undone.')) {
+            try {
+                await api.delete(`/vehicles/${vehicleId}`);
+                setSelectedVehicleId('');
+                await fetchData();
+            } catch (error) {
+                console.error('Error deleting vehicle:', error);
+                alert('Failed to delete vehicle.');
+            }
+        }
     };
 
     const handleStartEditDamage = (index) => {
@@ -324,13 +367,6 @@ export default function VehicleProfiles() {
         { title: 'Insurance Claim', value: stationMetrics.insuranceClaim, icon: MapPin, color: 'purple' },
     ] : [];
 
-    const handleVehicleDetailSelection = (e) => {
-        const vehicleId = e.target.value;
-        if (vehicleId) {
-            navigate(`/vehicles/${vehicleId}`);
-        }
-    };
-
     return (
         <div className="p-6 bg-gray-50 min-h-full">
             <div className="flex justify-between items-center mb-6">
@@ -340,14 +376,17 @@ export default function VehicleProfiles() {
                 </button>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 mb-8">
-                <div className="flex-1 max-w-sm">
+            <div className="flex items-end flex-wrap gap-4 mb-8">
+                <div className="flex-1 min-w-[250px] max-w-sm">
                     <label htmlFor="station-select" className="block text-sm font-medium text-gray-700 mb-2">Select by Station</label>
                     <select
                         id="station-select"
                         className="w-full px-4 py-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
                         value={selectedStation}
-                        onChange={(e) => setSelectedStation(e.target.value)}
+                        onChange={(e) => {
+                            setSelectedStation(e.target.value);
+                            setSelectedVehicleId('');
+                        }}
                     >
                         <option value="">Please Select a Station</option>
                         {stationList.map(station => (
@@ -356,15 +395,15 @@ export default function VehicleProfiles() {
                     </select>
                 </div>
                 {selectedStation && stationData?.vehicles.length > 0 && (
-                    <div className="flex-1 max-w-sm">
+                    <div className="flex-1 min-w-[250px] max-w-sm">
                         <label htmlFor="vehicle-detail-select" className="block text-sm font-medium text-gray-700 mb-2">Select Vehicle by Callsign</label>
                         <select
                             id="vehicle-detail-select"
                             className="w-full px-4 py-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
-                            onChange={handleVehicleDetailSelection}
-                            value=""
+                            onChange={(e) => setSelectedVehicleId(e.target.value)}
+                            value={selectedVehicleId}
                         >
-                            <option value="">-- Select a Vehicle to View Details --</option>
+                            <option value="">-- Select a Vehicle to Manage --</option>
                             {stationData.vehicles.map(vehicle => (
                                 <option key={vehicle._id} value={vehicle._id}>
                                     {vehicle.callsign} - {vehicle.name}
@@ -382,6 +421,41 @@ export default function VehicleProfiles() {
                     <Car className="h-12 w-12 mx-auto text-gray-300 mb-4" />
                     <h3 className="font-semibold text-lg">No Station Selected</h3>
                     <p className="text-sm">Please choose a station to view its fleet details and analytics.</p>
+                </div>
+            ) : selectedVehicleId && selectedVehicleObject ? (
+                <div className="mb-12">
+                    <h2 className="text-2xl font-semibold text-gray-800 mb-4">Selected Vehicle</h2>
+                    <div className="bg-white rounded-xl shadow-lg border p-6 max-w-sm">
+                        <div className="h-48 bg-gray-100 rounded-lg flex items-center justify-center p-2 mb-4">
+                            <img src={selectedVehicleObject.images?.main ? `http://localhost:5000/${selectedVehicleObject.images.main}` : '/vehicle/ambulance.png'} alt={selectedVehicleObject.name} className="max-h-full max-w-full object-contain" />
+                        </div>
+                        <h3 className="font-bold text-2xl text-green-600">{selectedVehicleObject.callsign}</h3>
+                        <p className="text-md text-gray-500 mb-4">{selectedVehicleObject.name} - {selectedVehicleObject.year}</p>
+                        <hr className="my-4" />
+                        <div className="text-md space-y-3 text-gray-700 mb-6">
+                            <p className="flex justify-between"><span>Status:</span><span className="font-bold text-gray-900">{selectedVehicleObject.status}</span></p>
+                            <p className="flex justify-between"><span>Mileage:</span><span className="font-bold text-gray-900">{selectedVehicleObject.mileage?.toLocaleString() || 'N/A'} km</span></p>
+                        </div>
+                        <div className="space-y-2">
+                            <Link to={`/vehicles/${selectedVehicleObject._id}`} className="w-full bg-green-600 text-white px-4 py-2.5 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-sm transition-all font-semibold">
+                                <Eye size={16} /> View Details
+                            </Link>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleEdit(selectedVehicleObject)}
+                                    className="w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 shadow-sm font-semibold"
+                                >
+                                    <Edit size={16} /> Edit
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(selectedVehicleObject._id)}
+                                    className="w-full bg-red-600 text-white px-4 py-2.5 rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 shadow-sm font-semibold"
+                                >
+                                    <Trash size={16} /> Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-12">
@@ -500,14 +574,12 @@ export default function VehicleProfiles() {
                                 <div><label className="block text-sm font-medium">Model</label><input type="text" required name="model" className="w-full px-3 py-2 border rounded-md" value={formData.model} onChange={(e) => setFormData({ ...formData, model: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Year</label><input type="number" required name="year" className="w-full px-3 py-2 border rounded-md" value={formData.year} onChange={(e) => setFormData({ ...formData, year: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Mileage (km)</label><input type="number" name="mileage" className="w-full px-3 py-2 border rounded-md" value={formData.mileage} onChange={(e) => setFormData({ ...formData, mileage: e.target.value })} /></div>
-                                <div><label className="block text-sm font-medium">PM Interval (km)</label><input type="number" required name="pmInterval" className="w-full px-3 py-2 border rounded-md" value={formData.pmInterval} onChange={(e) => setFormData({ ...formData, pmInterval: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Ownership</label><select name="ownerName" className="w-full px-3 py-2 border rounded-md bg-white" value={formData.ownerName} onChange={(e) => setFormData({ ...formData, ownerName: e.target.value })}><option value="">Select Ownership</option>{ownerList.map(o => (<option key={o} value={o}>{o}</option>))}</select></div>
                                 <div><label className="block text-sm font-medium">Chassis No.</label><input type="text" name="chassisNo" className="w-full px-3 py-2 border rounded-md" value={formData.chassisNo} onChange={(e) => setFormData({ ...formData, chassisNo: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Engine No.</label><input type="text" name="engineNo" className="w-full px-3 py-2 border rounded-md" value={formData.engineNo} onChange={(e) => setFormData({ ...formData, engineNo: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Registration No.</label><input type="text" name="registrationNo" className="w-full px-3 py-2 border rounded-md" value={formData.registrationNo} onChange={(e) => setFormData({ ...formData, registrationNo: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Fuel Type</label><input type="text" name="fuelType" className="w-full px-3 py-2 border rounded-md" value={formData.fuelType} onChange={(e) => setFormData({ ...formData, fuelType: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Engine Capacity (cc)</label><input type="text" name="engineCapacity" className="w-full px-3 py-2 border rounded-md" value={formData.engineCapacity} onChange={(e) => setFormData({ ...formData, engineCapacity: e.target.value })} /></div>
-                                <div><label className="block text-sm font-medium">Fuel Tank Capacity (L)</label><input type="number" name="fuelTankCapacity" className="w-full px-3 py-2 border rounded-md" value={formData.fuelTankCapacity} onChange={(e) => setFormData({ ...formData, fuelTankCapacity: e.target.value })} /></div>
                                 <div><label className="block text-sm font-medium">Station</label><select name="registeredCity" className="w-full px-3 py-2 border rounded-md bg-white" value={formData.registeredCity} onChange={(e) => setFormData({ ...formData, registeredCity: e.target.value })}><option value="">Select Station</option>{stationList.map(s => (<option key={s} value={s}>{s}</option>))}</select></div>
                                 <div><label className="block text-sm font-medium">Transmission</label><select name="transmission" className="w-full px-3 py-2 border rounded-md bg-white" value={formData.transmission} onChange={(e) => setFormData({ ...formData, transmission: e.target.value })}><option value="Manual">Manual</option><option value="Automatic">Automatic</option></select></div>
                                 <div><label className="block text-sm font-medium">Status</label><select name="status" className="w-full px-3 py-2 border rounded-md bg-white" value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })}><option value="">Select Status</option>{statusList.map(s => (<option key={s} value={s}>{s}</option>))}</select></div>

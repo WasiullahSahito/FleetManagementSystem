@@ -7,16 +7,73 @@ import * as XLSX from 'xlsx';
 const maintenanceCategories = ['Preventive', 'Corrective'];
 const maintenanceTypes = {
     Preventive: ['PM', 'Tires', 'Brake'],
-    Corrective: ['Clutch', 'Mechanical', 'Engine', 'Suspension', 'A/C', 'Fabrication', 'Electrical', 'Brake'],
+    Corrective: ['Clutch', 'Mechanical', 'Engine', 'Suspension', 'A/C', 'Fabrication', 'Electrical'],
 };
 
-// Regions and their associated stations for filtering
-const regions = {
-    'Sukkur': ['Larkano', 'Qambar', 'Shahdadkot', 'Sukkur', 'Ghotki', 'Shikarpur', 'Kashmore', 'Kandhkot', 'Jacobabad', 'Khairpur', 'Hingroja', 'Ranipur'],
-    'Hyderabad': ['Hyderabad', 'Qazi Ahmed', 'Shaheed Benazirabad', 'Matiari', 'Naushero Feroze', 'Tando Allahyar', 'Jamshoro', 'Dadu', 'Mehar/Radhan', 'Sanghar', 'Sehwan'],
-    'Bambore': ['Thatta', 'Sujawal', 'Badin', 'Bathoro', 'Sakro', 'Tando Muhammad Khan', 'Mirpurkhas', 'Umerkot', 'Mithi', 'Tharparkar', 'Nagarparkar'],
+// Column definitions for the dynamic table
+const columnConfig = {
+    base_start: [
+        { key: 'vehicle', label: 'Vehicle' },
+        { key: 'category', label: 'Category' },
+        { key: 'type', label: 'Type' },
+    ],
+    base_end: [
+        { key: 'totalCost', label: 'Total Cost' },
+        { key: 'technician', label: 'Technician' },
+        { key: 'status', label: 'Status' },
+        { key: 'dateIn', label: 'Date In' },
+        { key: 'actions', label: 'Actions' },
+    ],
+    default_costs: [
+        { key: 'electricalCost', label: 'Electrical Cost' },
+        { key: 'fabricationCost', label: 'Fabrication Cost' },
+        { key: 'otherCost', label: 'Other Cost' },
+    ],
+    type_specific: {
+        PM: [
+            { key: 'detailedCosts.pm_oil_cost', label: 'Oil Cost' },
+            { key: 'detailedCosts.pm_oil_filter_cost', label: 'Oil Filter' },
+            { key: 'detailedCosts.pm_ac_filter_cost', label: 'AC Filter' },
+            { key: 'detailedCosts.pm_air_filter_cost', label: 'Air Filter' },
+            { key: 'detailedCosts.pm_any_other_cost', label: 'Any Other' },
+        ],
+        Tires: [
+            { key: 'detailedCosts.tires_cost', label: 'Tires Cost' },
+            { key: 'detailedCosts.tires_wheel_alignment_cost', label: 'Alignment' },
+            { key: 'detailedCosts.tires_any_other_cost', label: 'Any Other' },
+        ],
+        Brake: [
+            { key: 'detailedCosts.brake_pads_cost', label: 'Brake Pads' },
+            { key: 'detailedCosts.brake_disc_polish_cost', label: 'Disc Polish' },
+            { key: 'detailedCosts.brake_any_other_cost', label: 'Any Other' },
+        ],
+        Clutch: [
+            { key: 'detailedCosts.clutch_plate_cost', label: 'Clutch Plate' },
+            { key: 'detailedCosts.clutch_pressure_plate_cost', label: 'Pressure Plate' },
+            { key: 'detailedCosts.clutch_thrust_bearing_cost', label: 'Thrust Bearing' },
+            { key: 'detailedCosts.clutch_fly_wheel_matching_cost', label: 'Fly Wheel' },
+            { key: 'detailedCosts.clutch_any_other_cost', label: 'Any Other' },
+        ],
+        'A/C': [
+            { key: 'detailedCosts.ac_gas_topup_cost', label: 'Gas Topup' },
+            { key: 'detailedCosts.ac_cooling_coil_cost', label: 'Cooling Coil' },
+            { key: 'detailedCosts.ac_condenser_cost', label: 'Condenser' },
+            { key: 'detailedCosts.ac_compressor_cost', label: 'Compressor' },
+            { key: 'detailedCosts.ac_any_other_cost', label: 'Any Other' },
+        ],
+        Mechanical: [{ key: 'detailedCosts.mechanical_cost', label: 'Mechanical Cost' }],
+        Engine: [{ key: 'detailedCosts.engine_cost', label: 'Engine Cost' }],
+        Suspension: [{ key: 'detailedCosts.suspension_cost', label: 'Suspension Cost' }],
+        Fabrication: [{ key: 'detailedCosts.fabrication_cost', label: 'Fabrication Cost' }],
+        Electrical: [{ key: 'detailedCosts.electrical_cost', label: 'Electrical Cost' }],
+    }
 };
+
+const regions = { 'Sukkur': ['Larkano', 'Qambar', 'Shahdadkot', 'Sukkur', 'Ghotki', 'Shikarpur', 'Kashmore', 'Kandhkot', 'Jacobabad', 'Khairpur', 'Hingroja', 'Ranipur'], 'Hyderabad': ['Hyderabad', 'Qazi Ahmed', 'Shaheed Benazirabad', 'Matiari', 'Naushero Feroze', 'Tando Allahyar', 'Jamshoro', 'Dadu', 'Mehar/Radhan', 'Sanghar', 'Sehwan'], 'Bambore': ['Thatta', 'Sujawal', 'Badin', 'Bathoro', 'Sakro', 'Tando Muhammad Khan', 'Mirpurkhas', 'Umerkot', 'Mithi', 'Tharparkar', 'Nagarparkar'], };
 const allStations = Object.values(regions).flat().sort();
+const CostInput = ({ label, name, value, onChange }) => (<div> <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label> <input type="number" name={name} value={value} onChange={onChange} className="w-full px-3 py-2 border rounded-md" step="0.01" placeholder="0.00" /> </div>);
+const TotalCostDisplay = ({ value }) => (<div className="md:col-span-full"> <label className="block text-sm font-medium text-gray-700 mb-1">Total Cost</label> <input type="text" value={`Rs. ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-gray-100 font-bold" /> </div>);
+const initialDetailedCosts = { pm_oil_cost: '', pm_oil_filter_cost: '', pm_ac_filter_cost: '', pm_air_filter_cost: '', pm_any_other_cost: '', tires_cost: '', tires_wheel_alignment_cost: '', tires_any_other_cost: '', brake_pads_cost: '', brake_disc_polish_cost: '', brake_any_other_cost: '', clutch_plate_cost: '', clutch_pressure_plate_cost: '', clutch_thrust_bearing_cost: '', clutch_fly_wheel_matching_cost: '', clutch_any_other_cost: '', mechanical_cost: '', engine_cost: '', suspension_cost: '', ac_gas_topup_cost: '', ac_cooling_coil_cost: '', ac_condenser_cost: '', ac_compressor_cost: '', ac_any_other_cost: '', fabrication_cost: '', electrical_cost: '' };
 
 export default function MaintenanceRepairs() {
     const [maintenanceRecords, setMaintenanceRecords] = useState([]);
@@ -27,16 +84,11 @@ export default function MaintenanceRepairs() {
     const [selectedRegion, setSelectedRegion] = useState('');
     const [selectedStation, setSelectedStation] = useState('');
     const [selectedVehicleFilter, setSelectedVehicleFilter] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('Preventive');
+    const [selectedType, setSelectedType] = useState('PM');
     const [filteredRecords, setFilteredRecords] = useState([]);
-    const [formData, setFormData] = useState({
-        vehicle: '', category: '', type: '',
-        maintenanceDetails: '',
-        dateIn: new Date().toISOString().split('T')[0], timeIn: '',
-        dateOut: '', timeOut: '', removeDate: '',
-        electricalCost: '', fabricationCost: '', insuranceCost: '', otherCost: '',
-        status: 'Scheduled', description: '', technician: '', partsUsed: ''
-    });
+    const [tableColumns, setTableColumns] = useState([]);
+    const [formData, setFormData] = useState({ vehicle: '', category: '', type: '', maintenanceDetails: '', dateIn: new Date().toISOString().split('T')[0], timeIn: '', dateOut: '', timeOut: '', removeDate: '', status: 'Scheduled', description: '', technician: '', partsUsed: '', detailedCosts: initialDetailedCosts, });
 
     useEffect(() => {
         fetchMaintenanceRecords();
@@ -45,163 +97,144 @@ export default function MaintenanceRepairs() {
 
     useEffect(() => {
         let records = maintenanceRecords;
-        // Updated to filter by dateIn
         if (selectedMonth) records = records.filter(r => r.dateIn?.startsWith(selectedMonth));
-
         let stationsToFilter = selectedStation ? [selectedStation] : selectedRegion ? regions[selectedRegion] : [];
-        if (stationsToFilter.length > 0) {
-            const stationVehicleIds = new Set(vehicles.filter(v => stationsToFilter.includes(v.registeredCity)).map(v => v._id));
-            records = records.filter(r => stationVehicleIds.has(r.vehicle?._id));
-        }
-
+        if (stationsToFilter.length > 0) { const stationVehicleIds = new Set(vehicles.filter(v => stationsToFilter.includes(v.registeredCity)).map(v => v._id)); records = records.filter(r => stationVehicleIds.has(r.vehicle?._id)); }
         if (selectedCategory) records = records.filter(r => r.category === selectedCategory);
+        if (selectedType) records = records.filter(r => r.type === selectedType);
         if (selectedVehicleFilter) records = records.filter(r => r.vehicle?._id === selectedVehicleFilter);
-
         setFilteredRecords(records);
-    }, [selectedMonth, selectedRegion, selectedStation, selectedVehicleFilter, selectedCategory, maintenanceRecords, vehicles]);
+    }, [selectedMonth, selectedRegion, selectedStation, selectedVehicleFilter, selectedCategory, selectedType, maintenanceRecords, vehicles]);
 
-    const fetchMaintenanceRecords = async () => {
-        try {
-            const response = await api.get('/maintenance');
-            setMaintenanceRecords(response.data);
-        } catch (error) { console.error('Error fetching maintenance records:', error); }
-    };
+    useEffect(() => {
+        const costColumns = selectedType && columnConfig.type_specific[selectedType]
+            ? columnConfig.type_specific[selectedType]
+            : columnConfig.default_costs;
 
-    const fetchVehicles = async () => {
-        try {
-            const response = await api.get('/vehicles');
-            setVehicles(response.data);
-        } catch (error) { console.error('Error fetching vehicles:', error); }
-    };
+        setTableColumns([
+            ...columnConfig.base_start,
+            ...costColumns,
+            ...columnConfig.base_end,
+        ]);
+    }, [selectedType]);
 
-    const resetForm = () => {
-        setFormData({
-            vehicle: '', category: '', type: '',
-            maintenanceDetails: '',
-            dateIn: new Date().toISOString().split('T')[0], timeIn: '',
-            dateOut: '', timeOut: '', removeDate: '',
-            electricalCost: '', fabricationCost: '', insuranceCost: '', otherCost: '',
-            status: 'Scheduled', description: '', technician: '', partsUsed: ''
-        });
-        setEditingId(null);
-    };
-
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        if (name === 'category') setFormData(prev => ({ ...prev, category: value, type: '' }));
-        else setFormData(prev => ({ ...prev, [name]: value }));
-    };
+    const fetchMaintenanceRecords = async () => { try { const response = await api.get('/maintenance'); setMaintenanceRecords(response.data); } catch (error) { console.error('Error fetching maintenance records:', error); } };
+    const fetchVehicles = async () => { try { const response = await api.get('/vehicles'); setVehicles(response.data); } catch (error) { console.error('Error fetching vehicles:', error); } };
+    const resetForm = () => { setFormData({ vehicle: '', category: '', type: '', maintenanceDetails: '', dateIn: new Date().toISOString().split('T')[0], timeIn: '', dateOut: '', timeOut: '', removeDate: '', status: 'Scheduled', description: '', technician: '', partsUsed: '', detailedCosts: initialDetailedCosts, }); setEditingId(null); };
+    const handleChange = (e) => { const { name, value } = e.target; if (name === 'category') setFormData(prev => ({ ...prev, category: value, type: '' })); else setFormData(prev => ({ ...prev, [name]: value })); };
+    const handleCostChange = (e) => { const { name, value } = e.target; setFormData(prev => ({ ...prev, detailedCosts: { ...prev.detailedCosts, [name]: value } })); };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        const payload = { ...formData, electricalCost: parseFloat(formData.electricalCost) || 0, fabricationCost: parseFloat(formData.fabricationCost) || 0, insuranceCost: parseFloat(formData.insuranceCost) || 0, otherCost: parseFloat(formData.otherCost) || 0 };
-
-        // Combine date and time fields into ISO strings, handle empty fields
+        const { detailedCosts, ...restFormData } = formData;
+        const payload = { ...restFormData, detailedCosts };
+        payload.electricalCost = parseFloat(detailedCosts.electrical_cost) || 0;
+        payload.fabricationCost = parseFloat(detailedCosts.fabrication_cost) || 0;
+        const otherCostsSum = Object.entries(detailedCosts).filter(([key]) => key !== 'electrical_cost' && key !== 'fabrication_cost').reduce((sum, [, value]) => sum + (parseFloat(value) || 0), 0);
+        payload.otherCost = otherCostsSum;
         payload.dateIn = formData.dateIn ? new Date(`${formData.dateIn}T${formData.timeIn || '00:00:00'}`).toISOString() : null;
         payload.dateOut = formData.dateOut ? new Date(`${formData.dateOut}T${formData.timeOut || '00:00:00'}`).toISOString() : null;
         payload.removeDate = formData.removeDate ? new Date(formData.removeDate).toISOString() : null;
-
-        // Remove temporary state fields before sending
         delete payload.timeIn;
         delete payload.timeOut;
-
-        try {
-            if (editingId) await api.put(`/maintenance/${editingId}`, payload);
-            else await api.post('/maintenance', payload);
-            setShowModal(false);
-            resetForm();
-            fetchMaintenanceRecords();
-        } catch (error) {
-            console.error('Error saving maintenance record:', error);
-            alert(`Error: ${error.response?.data?.message || 'Could not save record.'}`);
-        }
+        try { if (editingId) await api.put(`/maintenance/${editingId}`, payload); else await api.post('/maintenance', payload); setShowModal(false); resetForm(); fetchMaintenanceRecords(); } catch (error) { console.error('Error saving maintenance record:', error); alert(`Error: ${error.response?.data?.message || 'Could not save record.'}`); }
     };
 
     const handleEdit = (record) => {
         setEditingId(record._id);
-
         const formatDate = (dateStr) => dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
         const formatTime = (dateStr) => dateStr ? new Date(dateStr).toTimeString().slice(0, 5) : '';
 
+        // Safely handle detailedCosts, which might be a Mongoose Map or a plain object
+        const recordCosts = record.detailedCosts || {};
+
         setFormData({
-            vehicle: record.vehicle?._id || '', category: record.category || '', type: record.type || '',
+            vehicle: record.vehicle?._id || '',
+            category: record.category || '',
+            type: record.type || '',
             maintenanceDetails: record.maintenanceDetails || '',
-            dateIn: formatDate(record.dateIn), timeIn: formatTime(record.dateIn),
-            dateOut: formatDate(record.dateOut), timeOut: formatTime(record.dateOut),
+            dateIn: formatDate(record.dateIn),
+            timeIn: formatTime(record.dateIn),
+            dateOut: formatDate(record.dateOut),
+            timeOut: formatTime(record.dateOut),
             removeDate: formatDate(record.removeDate),
-            electricalCost: record.electricalCost || '', fabricationCost: record.fabricationCost || '',
-            insuranceCost: record.insuranceCost || '', otherCost: record.otherCost || '',
-            status: record.status || 'Scheduled', description: record.description || '',
-            technician: record.technician || '', partsUsed: record.partsUsed || ''
+            status: record.status || 'Scheduled',
+            description: record.description || '',
+            technician: record.technician || '',
+            partsUsed: record.partsUsed || '',
+            detailedCosts: { ...initialDetailedCosts, ...recordCosts },
         });
         setShowModal(true);
     };
 
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this maintenance record?')) {
-            try {
-                await api.delete(`/maintenance/${id}`);
-                fetchMaintenanceRecords();
-            } catch (error) { console.error('Error deleting maintenance record:', error); }
-        }
-    };
-
-    const handleExportToExcel = () => {
-        if (filteredRecords.length === 0) return alert('No data to export.');
-        const exportData = filteredRecords.map(r => ({
-            'Vehicle': r.vehicle?.callsign || 'N/A', 'Category': r.category, 'Type': r.type,
-            'Maintenance Details': r.maintenanceDetails,
-            'Date In': r.dateIn ? new Date(r.dateIn).toLocaleString() : '',
-            'Date Out': r.dateOut ? new Date(r.dateOut).toLocaleString() : '',
-            'Remove Date': r.removeDate ? new Date(r.removeDate).toLocaleDateString() : '',
-            'Status': r.status,
-            'Electrical Cost (Rs.)': r.electricalCost || 0, 'Fabrication Cost (Rs.)': r.fabricationCost || 0, 'Insurance Cost (Rs.)': r.insuranceCost || 0, 'Other Cost (Rs.)': r.otherCost || 0,
-            'Total Cost (Rs.)': (r.electricalCost || 0) + (r.fabricationCost || 0) + (r.insuranceCost || 0) + (r.otherCost || 0),
-            'Technician': r.technician, 'Parts Used': r.partsUsed, 'Description': r.description
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(exportData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'MaintenanceDetails');
-        XLSX.writeFile(workbook, 'MaintenanceDetails.xlsx');
-    };
+    const handleDelete = async (id) => { if (window.confirm('Are you sure you want to delete this maintenance record?')) { try { await api.delete(`/maintenance/${id}`); fetchMaintenanceRecords(); } catch (error) { console.error('Error deleting maintenance record:', error); } } };
+    const handleExportToExcel = () => { if (filteredRecords.length === 0) return alert('No data to export.'); const exportData = filteredRecords.map(r => ({ 'Vehicle': r.vehicle?.callsign || 'N/A', 'Category': r.category, 'Type': r.type, 'Maintenance Details': r.maintenanceDetails, 'Date In': r.dateIn ? new Date(r.dateIn).toLocaleString() : '', 'Date Out': r.dateOut ? new Date(r.dateOut).toLocaleString() : '', 'Remove Date': r.removeDate ? new Date(r.removeDate).toLocaleDateString() : '', 'Status': r.status, 'Electrical Cost (Rs.)': r.electricalCost || 0, 'Fabrication Cost (Rs.)': r.fabricationCost || 0, 'Other Cost (Rs.)': r.otherCost || 0, 'Total Cost (Rs.)': (r.electricalCost || 0) + (r.fabricationCost || 0) + (r.insuranceCost || 0) + (r.otherCost || 0), 'Technician': r.technician, 'Parts Used': r.partsUsed, 'Description': r.description })); const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, 'MaintenanceDetails'); XLSX.writeFile(workbook, 'MaintenanceDetails.xlsx'); };
 
     const selectedVehicleObject = vehicles.find(v => v._id === formData.vehicle);
     const currentStation = selectedVehicleObject ? selectedVehicleObject.registeredCity : 'Select a Vehicle';
     const stationsForRegion = selectedRegion ? regions[selectedRegion] : allStations;
-
-    // This correctly filters vehicles for the MAIN page filter dropdown
     const filteredVehicleOptions = selectedStation ? vehicles.filter(v => v.registeredCity === selectedStation) : (selectedRegion ? vehicles.filter(v => regions[selectedRegion].includes(v.registeredCity)) : vehicles);
+    const modalVehicleOptions = [...vehicles].sort((a, b) => a.callsign.localeCompare(b.callsign));
+    const parse = val => parseFloat(val) || 0;
+    const { detailedCosts } = formData;
+    const pmTotal = parse(detailedCosts.pm_oil_cost) + parse(detailedCosts.pm_oil_filter_cost) + parse(detailedCosts.pm_ac_filter_cost) + parse(detailedCosts.pm_air_filter_cost) + parse(detailedCosts.pm_any_other_cost);
+    const tiresTotal = parse(detailedCosts.tires_cost) + parse(detailedCosts.tires_wheel_alignment_cost) + parse(detailedCosts.tires_any_other_cost);
+    const brakeTotal = parse(detailedCosts.brake_pads_cost) + parse(detailedCosts.brake_disc_polish_cost) + parse(detailedCosts.brake_any_other_cost);
+    const clutchTotal = parse(detailedCosts.clutch_plate_cost) + parse(detailedCosts.clutch_pressure_plate_cost) + parse(detailedCosts.clutch_thrust_bearing_cost) + parse(detailedCosts.clutch_fly_wheel_matching_cost) + parse(detailedCosts.clutch_any_other_cost);
+    const acTotal = parse(detailedCosts.ac_gas_topup_cost) + parse(detailedCosts.ac_cooling_coil_cost) + parse(detailedCosts.ac_condenser_cost) + parse(detailedCosts.ac_compressor_cost) + parse(detailedCosts.ac_any_other_cost);
 
-    // This is the list for the MODAL dropdown. It starts with the filtered list.
-    const modalVehicleOptions = [...filteredVehicleOptions];
+    const getNestedValue = (obj, path) => {
+        if (!path || !obj) return 'N/A';
+        return path.split('.').reduce((acc, part) => acc && acc[part] !== undefined ? acc[part] : 'N/A', obj);
+    };
 
-    // If we're editing, ensure the vehicle being edited is in the list, even if it doesn't match the current filter.
-    if (editingId && formData.vehicle) {
-        const isVehicleInList = modalVehicleOptions.some(v => v._id === formData.vehicle);
-        if (!isVehicleInList) {
-            const vehicleToEdit = vehicles.find(v => v._id === formData.vehicle);
-            if (vehicleToEdit) {
-                modalVehicleOptions.unshift(vehicleToEdit); // Add it to the top of the list
-            }
+    const renderCellContent = (record, column) => {
+        const value = getNestedValue(record, column.key);
+        const textColumns = ['category', 'type', 'technician'];
+
+        if (textColumns.includes(column.key)) {
+            return value !== 'N/A' ? value : 'N/A';
         }
-    }
 
-    const totalFormCost = (parseFloat(formData.electricalCost) || 0) + (parseFloat(formData.fabricationCost) || 0) + (parseFloat(formData.insuranceCost) || 0) + (parseFloat(formData.otherCost) || 0);
+        switch (column.key) {
+            case 'vehicle':
+                return record.vehicle?.callsign || 'N/A';
+            case 'dateIn':
+                return value !== 'N/A' ? new Date(value).toLocaleString() : 'N/A';
+            case 'status':
+                return <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${value === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{value}</span>;
+            case 'totalCost':
+                const total = (record.electricalCost || 0) + (record.fabricationCost || 0) + (record.insuranceCost || 0) + (record.otherCost || 0);
+                return <span className="font-bold text-gray-800">Rs. {total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>;
+            case 'actions':
+                return (<div className="flex items-center gap-2 text-gray-500"> <button onClick={() => handleEdit(record)} className="hover:text-indigo-600"><Edit className="h-5 w-5" /></button> <button onClick={() => handleDelete(record._id)} className="hover:text-red-600"><Trash2 className="h-5 w-5" /></button> </div>);
+            default: // This handles all cost columns
+                const numValue = parseFloat(value);
+                return !isNaN(numValue) ? `Rs. ${numValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Rs. 0.00';
+        }
+    };
 
     return (
         <div className="p-6 bg-gray-50 min-h-full">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">Maintenance & Repairs</h1>
-                <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm font-semibold">
-                    <Plus className="h-5 w-5" /> Add Maintenance
-                </button>
-            </div>
-
+            <div className="flex justify-between items-center mb-6"> <h1 className="text-2xl font-bold text-gray-800">Maintenance & Repairs</h1> <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm font-semibold"> <Plus className="h-5 w-5" /> Add Maintenance </button> </div>
             <div className="mb-6 flex flex-wrap gap-4 items-center bg-white p-4 rounded-lg border shadow-sm">
                 <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500" />
                 <select value={selectedRegion} onChange={(e) => { setSelectedRegion(e.target.value); setSelectedStation(''); setSelectedVehicleFilter(''); }} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"><option value="">All Regions</option>{Object.keys(regions).map(region => (<option key={region} value={region}>{region}</option>))}</select>
                 <select value={selectedStation} onChange={(e) => { setSelectedStation(e.target.value); setSelectedVehicleFilter(''); }} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"><option value="">All Stations</option>{stationsForRegion.map(station => (<option key={station} value={station}>{station}</option>))}</select>
-                <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"><option value="">All Categories</option>{maintenanceCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select>
+                <select value={selectedCategory} onChange={(e) => {
+                    const newCategory = e.target.value;
+                    setSelectedCategory(newCategory);
+                    if (maintenanceTypes[newCategory]?.[0]) {
+                        setSelectedType(maintenanceTypes[newCategory][0]);
+                    } else {
+                        setSelectedType('');
+                    }
+                }} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white">
+                    {maintenanceCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+                </select>
+                <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} disabled={!selectedCategory} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white disabled:bg-gray-100">
+                    {selectedCategory && maintenanceTypes[selectedCategory].map(type => (<option key={type} value={type}>{type}</option>))}
+                </select>
                 <select value={selectedVehicleFilter} onChange={(e) => setSelectedVehicleFilter(e.target.value)} className="px-3 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"><option value="">All Vehicles</option>{filteredVehicleOptions.map(vehicle => (<option key={vehicle._id} value={vehicle._id}>{vehicle.callsign} - {vehicle.name}</option>))}</select>
                 <button onClick={handleExportToExcel} className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm font-semibold"><Download className="h-5 w-5" /> Export Excel</button>
             </div>
@@ -211,106 +244,29 @@ export default function MaintenanceRepairs() {
                     <table className="w-full text-sm">
                         <thead className="bg-gray-50 border-b">
                             <tr>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Vehicle</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Category</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Type</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Date In</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Status</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Electrical Cost</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Fabrication Cost</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Insurance Cost</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Other Cost</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Total Cost</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Technician</th>
-                                <th className="px-6 py-3 text-left font-semibold text-gray-600">Actions</th>
+                                {tableColumns.map(col => (
+                                    <th key={col.key} className="px-6 py-3 text-left font-semibold text-gray-600">{col.label}</th>
+                                ))}
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y">
-                            {filteredRecords.length > 0 ? filteredRecords.map((record) => {
-                                const totalCost = (record.electricalCost || 0) + (record.fabricationCost || 0) + (record.insuranceCost || 0) + (record.otherCost || 0);
-                                return (
-                                    <tr key={record._id} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 font-medium text-gray-800">{record.vehicle?.callsign || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-gray-600">{record.category}</td>
-                                        <td className="px-6 py-4 text-gray-600">{record.type}</td>
-                                        <td className="px-6 py-4 text-gray-600">{record.dateIn ? new Date(record.dateIn).toLocaleString() : 'N/A'}</td>
-                                        <td className="px-6 py-4"><span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{record.status}</span></td>
-                                        <td className="px-6 py-4 text-gray-600">Rs. {(record.electricalCost || 0).toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-gray-600">Rs. {(record.fabricationCost || 0).toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-gray-600">Rs. {(record.insuranceCost || 0).toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-gray-600">Rs. {(record.otherCost || 0).toFixed(2)}</td>
-                                        <td className="px-6 py-4 font-bold text-gray-800">Rs. {totalCost.toFixed(2)}</td>
-                                        <td className="px-6 py-4 text-gray-600">{record.technician || 'N/A'}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2 text-gray-500">
-                                                <button onClick={() => handleEdit(record)} className="hover:text-indigo-600"><Edit className="h-5 w-5" /></button>
-                                                <button onClick={() => handleDelete(record._id)} className="hover:text-red-600"><Trash2 className="h-5 w-5" /></button>
-                                            </div>
+                            {filteredRecords.length > 0 ? filteredRecords.map((record) => (
+                                <tr key={record._id} className="hover:bg-gray-50">
+                                    {tableColumns.map(col => (
+                                        <td key={`${record._id}-${col.key}`} className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                                            {renderCellContent(record, col)}
                                         </td>
-                                    </tr>
-                                )
-                            }) : (
-                                <tr><td colSpan="12" className="text-center py-10 text-gray-500">No maintenance records found for the selected criteria.</td></tr>
+                                    ))}
+                                </tr>
+                            )) : (
+                                <tr><td colSpan={tableColumns.length} className="text-center py-10 text-gray-500">No maintenance records found for the selected criteria.</td></tr>
                             )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {showModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-lg p-8 w-full max-w-4xl shadow-xl max-h-[95vh] overflow-y-auto">
-                        <h2 className="text-xl font-bold mb-6 text-gray-800">{editingId ? 'Edit Maintenance Record' : 'Add Maintenance Record'}</h2>
-                        <form onSubmit={handleSubmit} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {/* --- THE ONLY CHANGE IS HERE --- */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                                    <select required name="vehicle" value={formData.vehicle} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                                        <option value="">Select a vehicle</option>
-                                        {/* Use the filtered list for the modal */}
-                                        {modalVehicleOptions.map((v) => (
-                                            <option key={v._id} value={v._id}>{v.callsign} - {v.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                {/* --- END OF CHANGE --- */}
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Station</label><input type="text" value={currentStation} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-gray-100" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Category</label><select name="category" required value={formData.category} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"><option value="">Select Category</option>{maintenanceCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select name="type" required value={formData.type} onChange={handleChange} disabled={!formData.category} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100"><option value="">Select Type</option>{formData.category && maintenanceTypes[formData.category].map(type => (<option key={type} value={type}>{type}</option>))}</select></div>
-                                <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Details</label><input type="text" name="maintenanceDetails" value={formData.maintenanceDetails} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                            </div>
-                            <hr />
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Date In</label><input type="date" name="dateIn" required value={formData.dateIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Time In</label><input type="time" name="timeIn" value={formData.timeIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div className="md:col-start-1"><label className="block text-sm font-medium text-gray-700 mb-1">Date Out</label><input type="date" name="dateOut" value={formData.dateOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Time Out</label><input type="time" name="timeOut" value={formData.timeOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Remove Date</label><input type="date" name="removeDate" value={formData.removeDate} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select name="status" value={formData.status} onChange={handleChange} className="w-full px-3 py-2 border rounded-md"><option value="Scheduled">Scheduled</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option></select></div>
-                            </div>
-                            <hr />
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Electrical Cost (Rs.)</label><input type="number" name="electricalCost" step="0.01" value={formData.electricalCost} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fabrication Cost (Rs.)</label><input type="number" name="fabricationCost" step="0.01" value={formData.fabricationCost} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Insurance Cost (Rs.)</label><input type="number" name="insuranceCost" step="0.01" value={formData.insuranceCost} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Any Other Cost (Rs.)</label><input type="number" name="otherCost" step="0.01" value={formData.otherCost} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Total Cost (Rs.)</label><input type="text" value={totalFormCost.toFixed(2)} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-gray-100 font-bold" /></div>
-                            </div>
-                            <hr />
-                            <div className="space-y-4">
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Technician</label><input type="text" name="technician" value={formData.technician} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Parts Used</label><input type="text" name="partsUsed" value={formData.partsUsed} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label><textarea name="description" rows="3" value={formData.description} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div>
-                            </div>
-                            <div className="flex gap-4 pt-4 mt-4 border-t">
-                                <button type="button" onClick={() => { setShowModal(false); resetForm(); }} className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">Cancel</button>
-                                <button type="submit" className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">{editingId ? 'Update Record' : 'Add Record'}</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
+            {showModal && (<div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50"> <div className="bg-white rounded-lg p-8 w-full max-w-4xl shadow-xl max-h-[95vh] overflow-y-auto"> <h2 className="text-xl font-bold mb-6 text-gray-800">{editingId ? 'Edit Maintenance Record' : 'Add Maintenance Record'}</h2> <form onSubmit={handleSubmit} className="space-y-4"> <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> <div> <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label> <select required name="vehicle" value={formData.vehicle} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"> <option value="">Select a vehicle</option> {modalVehicleOptions.map((v) => (<option key={v._id} value={v._id}>{v.callsign} - {v.name}</option>))} </select> </div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Station</label><input type="text" value={currentStation} readOnly disabled className="w-full px-3 py-2 border rounded-md bg-gray-100" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Category</label><select name="category" required value={formData.category} onChange={handleChange} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"><option value="">Select Category</option>{maintenanceCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label><select name="type" required value={formData.type} onChange={handleChange} disabled={!formData.category} className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-100"><option value="">Select Type</option>{formData.category && maintenanceTypes[formData.category].map(type => (<option key={type} value={type}>{type}</option>))}</select></div> <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 mb-1">Maintenance Details</label><input type="text" name="maintenanceDetails" value={formData.maintenanceDetails} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> </div> <hr /> <div className="pt-4 space-y-4"> <h3 className="text-lg font-semibold text-gray-700">Cost Breakdown</h3> {formData.category === 'Preventive' && formData.type === 'PM' && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> <CostInput label="Oil Cost" name="pm_oil_cost" value={detailedCosts.pm_oil_cost} onChange={handleCostChange} /> <CostInput label="Oil Filter Cost" name="pm_oil_filter_cost" value={detailedCosts.pm_oil_filter_cost} onChange={handleCostChange} /> <CostInput label="AC Filter Cost" name="pm_ac_filter_cost" value={detailedCosts.pm_ac_filter_cost} onChange={handleCostChange} /> <CostInput label="Air Filter Cost" name="pm_air_filter_cost" value={detailedCosts.pm_air_filter_cost} onChange={handleCostChange} /> <CostInput label="Any Other Cost" name="pm_any_other_cost" value={detailedCosts.pm_any_other_cost} onChange={handleCostChange} /> <TotalCostDisplay value={pmTotal} /> </div>)} {formData.category === 'Preventive' && formData.type === 'Tires' && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> <CostInput label="Tires Cost" name="tires_cost" value={detailedCosts.tires_cost} onChange={handleCostChange} /> <CostInput label="Wheel Alignment etc." name="tires_wheel_alignment_cost" value={detailedCosts.tires_wheel_alignment_cost} onChange={handleCostChange} /> <CostInput label="Any Other Cost" name="tires_any_other_cost" value={detailedCosts.tires_any_other_cost} onChange={handleCostChange} /> <TotalCostDisplay value={tiresTotal} /> </div>)} {formData.category === 'Preventive' && formData.type === 'Brake' && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> <CostInput label="Brake Pads Cost" name="brake_pads_cost" value={detailedCosts.brake_pads_cost} onChange={handleCostChange} /> <CostInput label="Disc Polish Cost" name="brake_disc_polish_cost" value={detailedCosts.brake_disc_polish_cost} onChange={handleCostChange} /> <CostInput label="Any Other Cost" name="brake_any_other_cost" value={detailedCosts.brake_any_other_cost} onChange={handleCostChange} /> <TotalCostDisplay value={brakeTotal} /> </div>)} {formData.category === 'Corrective' && formData.type === 'Clutch' && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> <CostInput label="Clutch Plate" name="clutch_plate_cost" value={detailedCosts.clutch_plate_cost} onChange={handleCostChange} /> <CostInput label="Pressure Plate" name="clutch_pressure_plate_cost" value={detailedCosts.clutch_pressure_plate_cost} onChange={handleCostChange} /> <CostInput label="Thrust Bearing" name="clutch_thrust_bearing_cost" value={detailedCosts.clutch_thrust_bearing_cost} onChange={handleCostChange} /> <CostInput label="Fly Wheel Matching" name="clutch_fly_wheel_matching_cost" value={detailedCosts.clutch_fly_wheel_matching_cost} onChange={handleCostChange} /> <CostInput label="Any Other Cost" name="clutch_any_other_cost" value={detailedCosts.clutch_any_other_cost} onChange={handleCostChange} /> <TotalCostDisplay value={clutchTotal} /> </div>)} {formData.category === 'Corrective' && ['Mechanical', 'Engine', 'Suspension', 'Fabrication', 'Electrical'].includes(formData.type) && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> {formData.type === 'Mechanical' && <CostInput label="Mechanical Cost" name="mechanical_cost" value={detailedCosts.mechanical_cost} onChange={handleCostChange} />} {formData.type === 'Engine' && <CostInput label="Engine Cost" name="engine_cost" value={detailedCosts.engine_cost} onChange={handleCostChange} />} {formData.type === 'Suspension' && <CostInput label="Suspension Cost" name="suspension_cost" value={detailedCosts.suspension_cost} onChange={handleCostChange} />} {formData.type === 'Fabrication' && <CostInput label="Fabrication Cost" name="fabrication_cost" value={detailedCosts.fabrication_cost} onChange={handleCostChange} />} {formData.type === 'Electrical' && <CostInput label="Electrical Cost" name="electrical_cost" value={detailedCosts.electrical_cost} onChange={handleCostChange} />} </div>)} {formData.category === 'Corrective' && formData.type === 'A/C' && (<div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 border rounded-md bg-gray-50"> <CostInput label="Gas Topup" name="ac_gas_topup_cost" value={detailedCosts.ac_gas_topup_cost} onChange={handleCostChange} /> <CostInput label="Cooling Coil" name="ac_cooling_coil_cost" value={detailedCosts.ac_cooling_coil_cost} onChange={handleCostChange} /> <CostInput label="Condenser" name="ac_condenser_cost" value={detailedCosts.ac_condenser_cost} onChange={handleCostChange} /> <CostInput label="Compressor" name="ac_compressor_cost" value={detailedCosts.ac_compressor_cost} onChange={handleCostChange} /> <CostInput label="Any Other Cost" name="ac_any_other_cost" value={detailedCosts.ac_any_other_cost} onChange={handleCostChange} /> <TotalCostDisplay value={acTotal} /> </div>)} </div> <hr /> <div className="grid grid-cols-2 md:grid-cols-3 gap-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Date In</label><input type="date" name="dateIn" required value={formData.dateIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Time In</label><input type="time" name="timeIn" value={formData.timeIn} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div className="md:col-start-1"><label className="block text-sm font-medium text-gray-700 mb-1">Date Out</label><input type="date" name="dateOut" value={formData.dateOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Time Out</label><input type="time" name="timeOut" value={formData.timeOut} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Remove Date</label><input type="date" name="removeDate" value={formData.removeDate} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Status</label><select name="status" value={formData.status} onChange={handleChange} className="w-full px-3 py-2 border rounded-md"><option value="Scheduled">Scheduled</option><option value="In Progress">In Progress</option><option value="Completed">Completed</option></select></div> </div> <hr /> <div className="space-y-4"> <div><label className="block text-sm font-medium text-gray-700 mb-1">Technician</label><input type="text" name="technician" value={formData.technician} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Parts Used</label><input type="text" name="partsUsed" value={formData.partsUsed} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label><textarea name="description" rows="3" value={formData.description} onChange={handleChange} className="w-full px-3 py-2 border rounded-md" /></div> </div> <div className="flex gap-4 pt-4 mt-4 border-t"> <button type="button" onClick={() => { setShowModal(false); resetForm(); }} className="flex-1 px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">Cancel</button> <button type="submit" className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">{editingId ? 'Update Record' : 'Add Record'}</button> </div> </form> </div> </div>)}
         </div>
     );
 }
