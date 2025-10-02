@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Download, Droplets } from 'lucide-react';
+import { Plus, Edit, Trash2, Download, Droplets, Upload } from 'lucide-react';
 import api from '../api';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -27,12 +27,14 @@ export default function FuelingDetails() {
     const [showModal, setShowModal] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [stations, setStations] = useState([]);
-
     const [selectedStation, setSelectedStation] = useState('');
     const [filteredVehicles, setFilteredVehicles] = useState([]);
     const [selectedVehicleFilter, setSelectedVehicleFilter] = useState('');
     const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
     const [filteredRecords, setFilteredRecords] = useState([]);
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [uploadFile, setUploadFile] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     const [formData, setFormData] = useState({
         vehicle: '', date: new Date().toISOString().split('T')[0], amb_no: '', slip_no: '',
@@ -76,7 +78,6 @@ export default function FuelingDetails() {
         setFilteredRecords(records);
     }, [selectedVehicleFilter, selectedStation, selectedMonth, fuelingRecords, vehicles]);
 
-
     const fetchFuelingRecords = async () => {
         try {
             const response = await api.get('/fuel');
@@ -117,10 +118,7 @@ export default function FuelingDetails() {
                 amb_no: selectedVehicle ? selectedVehicle.callsign : ''
             }));
         } else {
-            setFormData(prevData => ({
-                ...prevData,
-                [name]: value
-            }));
+            setFormData(prevData => ({ ...prevData, [name]: value }));
         }
     };
 
@@ -175,9 +173,52 @@ export default function FuelingDetails() {
         }
     };
 
+    const handleDownloadTemplate = () => {
+        const headers = [
+            'vehicleCallsign', 'date', 'slip_no', 'current_refueling_km', 'total_km',
+            'tracker_verified_km', 'current_refueling_liters', 'rate', 'amount_rs',
+            'refueling_time', 'evo_emp_code', 'evo_name', 'sc_name', 'sc_name2'
+        ];
+        const sampleData = [{
+            vehicleCallsign: 'HY-999', date: '2023-10-26', slip_no: 'S-123',
+            current_refueling_km: 50123, total_km: 350, tracker_verified_km: 348,
+            current_refueling_liters: 30.5, rate: 290.97, amount_rs: 8874.58,
+            refueling_time: '14:30', evo_emp_code: 'E101', evo_name: 'John Doe',
+            sc_name: 'SC Name 1', sc_name2: 'SC Name 2'
+        }];
+        const ws = XLSX.utils.json_to_sheet(sampleData, { header: headers });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Fueling');
+        XLSX.writeFile(wb, 'fueling_template.xlsx');
+    };
+
+    const handleBulkUpload = async () => {
+        if (!uploadFile) {
+            alert('Please select a file to upload.');
+            return;
+        }
+        setIsUploading(true);
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', uploadFile);
+        try {
+            const response = await api.post('/fuel/bulk-upload', uploadFormData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            alert(response.data.message || 'Bulk upload successful!');
+            setShowBulkModal(false);
+            setUploadFile(null);
+            fetchFuelingRecords();
+        } catch (error) {
+            console.error('Error during bulk upload:', error);
+            alert(`Upload failed: ${error.response?.data?.message || 'An error occurred.'}`);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     const handleExportToExcel = () => {
         if (filteredRecords.length === 0) {
-            alert('No data to export. Please select filters to display data first.');
+            alert('No data to export.');
             return;
         }
         const exportData = filteredRecords.map(record => ({
@@ -190,11 +231,7 @@ export default function FuelingDetails() {
         const worksheet = XLSX.utils.json_to_sheet(exportData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'FuelingDetails');
-        const colWidths = [
-            { wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 12 }, { wch: 20 }, { wch: 10 },
-            { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }
-        ];
-        worksheet['!cols'] = colWidths;
+        worksheet['!cols'] = [{ wch: 12 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 12 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
         const vehicle = vehicles.find(v => v._id === selectedVehicleFilter);
         const fileName = `fueling-details-${selectedStation || 'all-stations'}-${vehicle ? vehicle.callsign : 'all'}-${selectedMonth}.xlsx`;
         XLSX.writeFile(workbook, fileName);
@@ -202,7 +239,7 @@ export default function FuelingDetails() {
 
     const handleExportToPDF = () => {
         if (filteredRecords.length === 0) {
-            alert('No data to export. Please select filters to display data first.');
+            alert('No data to export.');
             return;
         }
         const doc = new jsPDF({ orientation: 'landscape' });
@@ -217,10 +254,7 @@ export default function FuelingDetails() {
             doc.text(`Vehicle: ${vehicle.callsign}`, 70, 27);
         }
 
-        const tableColumn = [
-            "Date", "Amb #", "Slip #", "Refuel KM", "Total KM", "Tracker KM",
-            "Liters", "Rate", "Amount", "Time", "EVO Code", "EVO Name", "SC Name", "SC Name2"
-        ];
+        const tableColumn = ["Date", "Amb #", "Slip #", "Refuel KM", "Total KM", "Tracker KM", "Liters", "Rate", "Amount", "Time", "EVO Code", "EVO Name", "SC Name", "SC Name2"];
         const tableRows = filteredRecords.map(record => [
             new Date(record.date).toLocaleDateString(), record.amb_no, record.slip_no,
             record.current_refueling_km, record.total_km, record.tracker_verified_km,
@@ -229,12 +263,8 @@ export default function FuelingDetails() {
         ]);
 
         autoTable(doc, {
-            head: [tableColumn],
-            body: tableRows,
-            startY: 35,
-            theme: 'striped',
-            headStyles: { fillColor: [22, 163, 74] },
-            styles: { fontSize: 8 },
+            head: [tableColumn], body: tableRows, startY: 35, theme: 'striped',
+            headStyles: { fillColor: [22, 163, 74] }, styles: { fontSize: 8 },
         });
 
         const fileName = `fueling-details-${selectedStation || 'all-stations'}-${vehicle ? vehicle.callsign : 'all'}-${selectedMonth}.pdf`;
@@ -245,48 +275,27 @@ export default function FuelingDetails() {
         <div className="p-6 bg-gray-50 min-h-full">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-gray-900">Fueling Details</h1>
-                <div className="flex items-center gap-4">
-                    <input
-                        type="month"
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
-                    />
-                    <select
-                        value={selectedStation}
-                        onChange={(e) => setSelectedStation(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
-                    >
+                <div className="flex items-center gap-2 flex-wrap">
+                    <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500" />
+                    <select value={selectedStation} onChange={(e) => setSelectedStation(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white">
                         <option value="">Select by Station</option>
-                        {stations.map(station => (
-                            <option key={station} value={station}>{station}</option>
-                        ))}
+                        {stations.map(station => (<option key={station} value={station}>{station}</option>))}
                     </select>
-
-                    <select
-                        value={selectedVehicleFilter}
-                        onChange={(e) => setSelectedVehicleFilter(e.target.value)}
-                        className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white"
-                        disabled={!selectedStation}
-                    >
+                    <select value={selectedVehicleFilter} onChange={(e) => setSelectedVehicleFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white" disabled={!selectedStation}>
                         <option value="">All Vehicles</option>
-                        {filteredVehicles.map(vehicle => (
-                            <option key={vehicle._id} value={vehicle._id}>
-                                {vehicle.callsign} - {vehicle.name}
-                            </option>
-                        ))}
+                        {filteredVehicles.map(vehicle => (<option key={vehicle._id} value={vehicle._id}>{vehicle.callsign} - {vehicle.name}</option>))}
                     </select>
-
+                    <button onClick={() => setShowBulkModal(true)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center gap-2 shadow-sm">
+                        <Upload className="h-4 w-4" /> Bulk Upload
+                    </button>
                     <button onClick={handleExportToExcel} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm">
                         <Download className="h-4 w-4" /> Export Excel
                     </button>
-
                     <button onClick={handleExportToPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 shadow-sm">
                         <Download className="h-4 w-4" /> Export PDF
                     </button>
-
                     <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm">
-                        <Plus className="h-4 w-4" /> Add Fuel Record
+                        <Plus className="h-4 w-4" /> Add Record
                     </button>
                 </div>
             </div>
@@ -298,16 +307,16 @@ export default function FuelingDetails() {
                             <thead className="bg-gray-100">
                                 <tr>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Amb Sign #</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Amb #</th>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Slip #</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Current Refueling KM</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Refueling KM</th>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Total KM</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Tracker Verified KM</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Current Refueling Liters</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Rate per Liter</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Amount (in Rs.)</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Refueling Time</th>
-                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">EVO Emp. Code</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Tracker KM</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Liters</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Rate</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">EVO Code</th>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">EVO Name</th>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">S.C Name</th>
                                     <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">S.C Name2</th>
@@ -333,21 +342,13 @@ export default function FuelingDetails() {
                                         <td className="px-4 py-3 whitespace-nowrap">{record.sc_name2}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <div className="flex items-center gap-2">
-                                                <button onClick={() => handleEdit(record)} className="text-green-600 hover:text-green-800" title="Edit">
-                                                    <Edit className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={() => handleDelete(record._id)} className="text-red-600 hover:text-red-800" title="Delete">
-                                                    <Trash2 className="h-4 w-4" />
-                                                </button>
+                                                <button onClick={() => handleEdit(record)} className="text-green-600 hover:text-green-800" title="Edit"><Edit className="h-4 w-4" /></button>
+                                                <button onClick={() => handleDelete(record._id)} className="text-red-600 hover:text-red-800" title="Delete"><Trash2 className="h-4 w-4" /></button>
                                             </div>
                                         </td>
                                     </tr>
                                 )) : (
-                                    <tr>
-                                        <td colSpan="15" className="text-center py-10 text-gray-500">
-                                            No fueling records found for the selected criteria.
-                                        </td>
-                                    </tr>
+                                    <tr><td colSpan="15" className="text-center py-10 text-gray-500">No fueling records found for the selected criteria.</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -361,7 +362,6 @@ export default function FuelingDetails() {
                 </div>
             )}
 
-
             {showModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -371,16 +371,9 @@ export default function FuelingDetails() {
                                 <FormInput label="Date" name="date" type="date" required value={formData.date} onChange={handleChange} />
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                                    <select required name="vehicle"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500"
-                                        value={formData.vehicle}
-                                        onChange={handleChange}>
+                                    <select required name="vehicle" className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500" value={formData.vehicle} onChange={handleChange}>
                                         <option value="">Select a vehicle</option>
-                                        {vehicles.map((vehicle) => (
-                                            <option key={vehicle._id} value={vehicle._id}>
-                                                {vehicle.callsign} - {vehicle.name}
-                                            </option>
-                                        ))}
+                                        {vehicles.map((vehicle) => (<option key={vehicle._id} value={vehicle._id}>{vehicle.callsign} - {vehicle.name}</option>))}
                                     </select>
                                 </div>
                                 <FormInput label="Amb Sign #" name="amb_no" value={formData.amb_no} onChange={handleChange} readOnly={true} />
@@ -397,18 +390,29 @@ export default function FuelingDetails() {
                                 <FormInput label="S.C Name" name="sc_name" value={formData.sc_name} onChange={handleChange} />
                                 <FormInput label="S.C Name 2" name="sc_name2" value={formData.sc_name2} onChange={handleChange} />
                             </div>
-
                             <div className="flex gap-4 pt-4">
-                                <button type="button" onClick={() => { setShowModal(false); resetForm(); }}
-                                    className="flex-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">
-                                    Cancel
-                                </button>
-                                <button type="submit"
-                                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
-                                    {editingId ? 'Update Record' : 'Add Record'}
-                                </button>
+                                <button type="button" onClick={() => { setShowModal(false); resetForm(); }} className="flex-1 px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300">Cancel</button>
+                                <button type="submit" className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">{editingId ? 'Update Record' : 'Add Record'}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {showBulkModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg p-8 w-full max-w-lg shadow-xl">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">Bulk Upload Fueling Records</h2>
+                        <p className="text-sm text-gray-600 mb-4">Upload an Excel file (.xlsx) with fueling data. The file must have a header row with the exact column names as in the template.</p>
+                        <button onClick={handleDownloadTemplate} className="text-green-600 hover:text-green-800 text-sm font-semibold mb-4">Download Template File</button>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Select Excel File</label>
+                            <input type="file" accept=".xlsx, .xls" onChange={(e) => setUploadFile(e.target.files[0])} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100" />
+                        </div>
+                        <div className="flex gap-4 pt-6 mt-4 border-t">
+                            <button type="button" onClick={() => setShowBulkModal(false)} className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 font-semibold">Cancel</button>
+                            <button onClick={handleBulkUpload} disabled={isUploading} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:bg-green-300">{isUploading ? 'Uploading...' : 'Upload File'}</button>
+                        </div>
                     </div>
                 </div>
             )}

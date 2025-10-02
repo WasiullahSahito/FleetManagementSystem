@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash, Car, X, CheckCircle, AlertTriangle, Settings, MapPin, Eye } from 'lucide-react';
+import { Plus, Edit, Trash, Car, X, CheckCircle, AlertTriangle, Settings, MapPin, Eye, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../api';
+import * as XLSX from 'xlsx';
 
 const vehicleConfigs = {
     ambulance: {
@@ -109,6 +110,11 @@ export default function VehicleProfiles() {
     const [editingId, setEditingId] = useState(null);
     const [currentDamageLocations, setCurrentDamageLocations] = useState(vehicleConfigs.default.locations);
     const [editingDamageIndex, setEditingDamageIndex] = useState(null);
+
+    // --- NEW: State for Bulk Upload ---
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [uploadFile, setUploadFile] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -359,6 +365,56 @@ export default function VehicleProfiles() {
         }
     };
 
+    // --- NEW: Function to download the Excel template ---
+    const handleDownloadTemplate = () => {
+        const headers = [
+            'name', 'callsign', 'model', 'year', 'mileage', 'status',
+            'chassisNo', 'engineNo', 'registrationNo', 'fuelType',
+            'transmission', 'engineCapacity', 'registeredCity', 'ownerName'
+        ];
+        // Add a sample row for guidance
+        const sampleData = [{
+            name: 'Ambulances', callsign: 'HY-999', model: 'Toyota Hiace',
+            year: 2022, mileage: 15000, status: 'OnRoad Fleet',
+            chassisNo: 'CHASSIS12345', engineNo: 'ENGINE54321', registrationNo: 'REG-001',
+            fuelType: 'Diesel', transmission: 'Manual', engineCapacity: '2800',
+            registeredCity: 'Hyderabad', ownerName: 'SIEHS'
+        }];
+
+        const ws = XLSX.utils.json_to_sheet(sampleData, { header: headers });
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Vehicles');
+        XLSX.writeFile(wb, 'vehicles_template.xlsx');
+    };
+
+    // --- NEW: Function to handle the file upload ---
+    const handleBulkUpload = async () => {
+        if (!uploadFile) {
+            alert('Please select a file to upload.');
+            return;
+        }
+        setIsUploading(true);
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', uploadFile);
+
+        try {
+            // NOTE: This requires a new backend endpoint: POST /api/vehicles/bulk-upload
+            await api.post('/vehicles/bulk-upload', uploadFormData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            alert('Bulk upload successful! New vehicles have been added.');
+            setShowBulkModal(false);
+            setUploadFile(null);
+            fetchData(); // Refresh data after upload
+        } catch (error) {
+            console.error('Error during bulk upload:', error);
+            alert(`Upload failed: ${error.response?.data?.message || 'An error occurred. Make sure the backend supports this feature.'}`);
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+
     const fleetMetricsCards = stationMetrics ? [
         { title: 'Total Fleet', value: stationMetrics.total, icon: Car, color: 'green' },
         { title: 'On-Road Fleet', value: stationMetrics.onRoad, icon: CheckCircle, color: 'green' },
@@ -371,9 +427,14 @@ export default function VehicleProfiles() {
         <div className="p-6 bg-gray-50 min-h-full">
             <div className="flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-gray-900">Vehicle Profiles</h1>
-                <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm">
-                    <Plus className="h-4 w-4" /> Add Vehicle
-                </button>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setShowBulkModal(true)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600 flex items-center gap-2 shadow-sm">
+                        <Upload className="h-4 w-4" /> Bulk Upload
+                    </button>
+                    <button onClick={() => { resetForm(); setShowModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm">
+                        <Plus className="h-4 w-4" /> Add Vehicle
+                    </button>
+                </div>
             </div>
 
             <div className="flex items-end flex-wrap gap-4 mb-8">
@@ -641,6 +702,41 @@ export default function VehicleProfiles() {
                                 <button type="submit" className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">{editingId ? 'Update Record' : 'Add Record'}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* --- NEW: Bulk Upload Modal --- */}
+            {showBulkModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg p-8 w-full max-w-lg shadow-xl">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">Bulk Upload Vehicles</h2>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Upload an Excel file (.xlsx) with vehicle data. The file must have a header row with the exact column names as in the template. The 'callsign' for each vehicle must be unique.
+                        </p>
+                        <p className="text-sm text-gray-600 font-semibold mb-4">Required columns: name, callsign, model, year.</p>
+
+                        <button onClick={handleDownloadTemplate} className="text-green-600 hover:text-green-800 text-sm font-semibold mb-4">
+                            Download Template File
+                        </button>
+
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Select Excel File</label>
+                            <input
+                                type="file"
+                                accept=".xlsx"
+                                onChange={(e) => setUploadFile(e.target.files[0])}
+                                className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                            />
+                        </div>
+
+                        <div className="flex gap-4 pt-6 mt-4 border-t">
+                            <button type="button" onClick={() => setShowBulkModal(false)} className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 font-semibold">
+                                Cancel
+                            </button>
+                            <button onClick={handleBulkUpload} disabled={isUploading} className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold disabled:bg-green-300">
+                                {isUploading ? 'Uploading...' : 'Upload File'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
