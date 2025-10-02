@@ -222,10 +222,18 @@ export default function InspectionManagement() {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                                    <select required className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100" value={formData.vehicle} disabled={!!editingInspection}>
+                                    {/* --- FIX START --- */}
+                                    <select
+                                        required
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md disabled:bg-gray-100"
+                                        value={formData.vehicle}
+                                        disabled={!!editingInspection}
+                                        onChange={(e) => setFormData({ ...formData, vehicle: e.target.value })}
+                                    >
                                         <option value="">Select a vehicle</option>
                                         {vehicles.map((vehicle) => (<option key={vehicle._id} value={vehicle._id}>{vehicle.callsign}</option>))}
                                     </select>
+                                    {/* --- FIX END --- */}
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>

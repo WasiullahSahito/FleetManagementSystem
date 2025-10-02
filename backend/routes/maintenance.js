@@ -1,4 +1,3 @@
-
 import express from 'express';
 import Maintenance from '../models/Maintenance.js';
 import Vehicle from '../models/Vehicle.js';
@@ -28,8 +27,11 @@ const updateVehicleMilestones = async (maintenanceRecord) => {
 // GET all maintenance records
 router.get('/', authenticate, async (req, res) => {
   try {
-    // Sort by the new 'dateIn' field instead of 'date'
-    const maintenanceRecords = await Maintenance.find().populate('vehicle', 'callsign').sort({ dateIn: -1 });
+    // --- FIX: Filter for records that have a 'category' field ---
+    // This ensures only new, correctly formatted records are sent to the frontend.
+    const maintenanceRecords = await Maintenance.find({ category: { $exists: true } })
+      .populate('vehicle', 'callsign')
+      .sort({ dateIn: -1 });
     res.json(maintenanceRecords);
   } catch (error) {
     res.status(500).json({ message: error.message });

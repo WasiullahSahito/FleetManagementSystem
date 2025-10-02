@@ -8,7 +8,6 @@ const maintenanceSchema = new mongoose.Schema({
   // New Date/Time fields from image
   dateIn: { type: Date, required: true },
   dateOut: { type: Date },
-  removeDate: { type: Date },
 
   // UPDATED COST FIELDS
   electricalCost: { type: Number, default: 0 },
@@ -19,7 +18,7 @@ const maintenanceSchema = new mongoose.Schema({
   // --- NEW: Added to store detailed cost breakdown from the form ---
   detailedCosts: {
     type: Map,
-    of: String
+    of: Number // UPDATED: Changed from String to Number to fix the bug
   },
 
   status: { type: String, enum: ['Scheduled', 'In Progress', 'Completed'], default: 'Scheduled' },

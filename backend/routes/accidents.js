@@ -18,6 +18,7 @@ router.post('/', authenticate, async (req, res) => {
 
 router.get('/', authenticate, async (req, res) => {
     try {
+        // --- IMPORTANT: Ensure 'populate' is used here ---
         const accidents = await Accident.find().populate('vehicle');
         res.json(accidents);
     } catch (error) {
