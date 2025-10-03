@@ -149,6 +149,8 @@ export default function Dashboard() {
 
             const maintenanceCount = vehicles.filter(v => v.status === 'Mechanical Maintenance').length;
             const insuranceClaimCount = vehicles.filter(v => v.status === 'Insurance Claim').length;
+            const offRoadFleetCount = vehicles.filter(v => v.status === 'OffRoad Fleet').length;
+
 
             setData({
                 vehicles,
@@ -156,7 +158,7 @@ export default function Dashboard() {
                 metrics: {
                     totalVehicles: vehicles.length,
                     onRoad: vehicles.filter(v => v.status === 'OnRoad Fleet').length,
-                    offRoad: maintenanceCount + insuranceClaimCount,
+                    offRoad: maintenanceCount + insuranceClaimCount + offRoadFleetCount,
                     maintenance: maintenanceCount,
                     insuranceClaim: insuranceClaimCount,
                 },
@@ -176,7 +178,6 @@ export default function Dashboard() {
         { title: 'Insurance Claim', value: data.metrics.insuranceClaim, icon: MapPin, color: 'purple' },
     ];
 
-    // --- NEW: Function to handle Excel export of monthly analytics ---
     const handleExportAnalyticsToExcel = () => {
         if (!monthlyMaintAnalytics || Object.keys(monthlyFuelAnalytics).length === 0) {
             alert('Analytics data is not yet available. Please wait a moment and try again.');
@@ -206,7 +207,6 @@ export default function Dashboard() {
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Analytics');
 
-        // Adjust column widths for better readability
         const colWidths = [
             { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 },
             { wch: 30 }, { wch: 30 }, { wch: 25 }, { wch: 35 }
@@ -221,7 +221,8 @@ export default function Dashboard() {
     const getSortedUniqueVehicles = () => {
         if (!data.vehicles || data.vehicles.length === 0) return [];
         const uniqueVehicles = [...new Map(data.vehicles.map(item => [item.name, item])).values()];
-        const sortOrder = ['Ambulances', 'Mortuary Van', 'Rapid Response Bike', 'Toyota Hilux 4x2'];
+        // --- UPDATED: Reordered the array to match your request ---
+        const sortOrder = ['Ambulances', 'TDP', 'Mortuary Van', 'Rapid Response Bike'];
         uniqueVehicles.sort((a, b) => {
             const indexA = sortOrder.indexOf(a.name);
             const indexB = sortOrder.indexOf(b.name);
@@ -262,10 +263,20 @@ export default function Dashboard() {
                     <h2 className="text-xl font-semibold text-gray-800 mb-4">Fleet Vehicles</h2>
                     <div className="flex overflow-x-auto space-x-6 pb-4 custom-scrollbar">
                         {uniqueVehicleNames.map((vehicle) => {
-                            const vehicleName = vehicle.name; const nameCounts = data.countsByStatusAndName[vehicleName];
+                            const vehicleName = vehicle.name;
+                            const nameCounts = data.countsByStatusAndName[vehicleName];
+                            // --- UPDATED: Logic to correctly calculate off-road count per vehicle type ---
+                            const offRoadCount = (nameCounts ? (nameCounts['OffRoad Fleet'] + nameCounts['Mechanical Maintenance'] + nameCounts['Insurance Claim']) : 0);
+
                             return (
                                 <div key={vehicle.name} className="flex-none w-64 bg-white shadow rounded-lg overflow-hidden shrink-0">
-                                    <div className="h-40 bg-gray-100 p-2 flex items-center justify-center"><img src={vehicle.images?.main ? `http://localhost:5000/${vehicle.images.main}` : '/vehicle/ambulance.png'} alt={vehicle.name} className="max-h-full max-w-full object-contain" /></div>
+                                    <div className="h-40 bg-gray-100 p-2 flex items-center justify-center">
+                                        <img
+                                            src={vehicle.images?.main ? `http://localhost:5000/${vehicle.images.main}` : '/vehicle/ambulance.png'}
+                                            alt={vehicle.name}
+                                            className="max-h-full max-w-full object-contain"
+                                        />
+                                    </div>
                                     <div className="p-4">
                                         <h3 className="font-bold text-gray-800 text-xl">{vehicle.name}</h3>
                                         <p className="text-sm text-green-600 font-bold">Total: {data.countsByName[vehicleName] || 0}</p>
@@ -273,7 +284,7 @@ export default function Dashboard() {
                                         {nameCounts && (
                                             <div className="text-sm space-y-2 text-gray-500">
                                                 <p className="flex justify-between"><span>On-Road:</span><span className="font-bold text-green-600">{nameCounts['OnRoad Fleet']}</span></p>
-                                                <p className="flex justify-between"><span>Off-Road:</span><span className="font-bold text-red-600">{nameCounts['Mechanical Maintenance'] + nameCounts['Insurance Claim']}</span></p>
+                                                <p className="flex justify-between"><span>Off-Road:</span><span className="font-bold text-red-600">{offRoadCount}</span></p>
                                                 <p className="flex justify-between"><span>Maintenance:</span><span className="font-bold text-yellow-600">{nameCounts['Mechanical Maintenance']}</span></p>
                                                 <p className="flex justify-between"><span>Insurance:</span><span className="font-bold text-purple-600">{nameCounts['Insurance Claim']}</span></p>
                                             </div>
@@ -290,7 +301,6 @@ export default function Dashboard() {
                         <h2 className="text-3xl font-semibold text-gray-800">Monthly Analytics</h2>
                         <div className="flex items-center gap-4">
                             <input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500" />
-                            {/* --- NEW: Export Analytics Button --- */}
                             <button
                                 onClick={handleExportAnalyticsToExcel}
                                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 shadow-sm"
