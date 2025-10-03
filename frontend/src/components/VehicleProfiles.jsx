@@ -99,6 +99,7 @@ export default function VehicleProfiles() {
     const [stationMetrics, setStationMetrics] = useState(null);
     const [selectedVehicleId, setSelectedVehicleId] = useState('');
     const [selectedVehicleObject, setSelectedVehicleObject] = useState(null);
+    const [callsignOptions, setCallsignOptions] = useState([]);
     const [formData, setFormData] = useState({
         name: '', callsign: '', model: '', year: new Date().getFullYear(), mileage: '', status: 'OnRoad Fleet',
         chassisNo: '', engineNo: '', registrationNo: '', fuelType: 'Petrol',
@@ -110,8 +111,6 @@ export default function VehicleProfiles() {
     const [editingId, setEditingId] = useState(null);
     const [currentDamageLocations, setCurrentDamageLocations] = useState(vehicleConfigs.default.locations);
     const [editingDamageIndex, setEditingDamageIndex] = useState(null);
-
-    // --- NEW: State for Bulk Upload ---
     const [showBulkModal, setShowBulkModal] = useState(false);
     const [uploadFile, setUploadFile] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
@@ -150,10 +149,13 @@ export default function VehicleProfiles() {
         if (!selectedStation) {
             setStationData(null);
             setStationMetrics(null);
+            setCallsignOptions([]);
             return;
         }
 
         const stationVehicles = vehicles.filter(v => v.registeredCity === selectedStation);
+        setCallsignOptions(stationVehicles);
+
         const uniqueVehicleTypesInStation = [...new Map(stationVehicles.map(item => [item.name, item])).values()]
             .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -365,14 +367,12 @@ export default function VehicleProfiles() {
         }
     };
 
-    // --- NEW: Function to download the Excel template ---
     const handleDownloadTemplate = () => {
         const headers = [
             'name', 'callsign', 'model', 'year', 'mileage', 'status',
             'chassisNo', 'engineNo', 'registrationNo', 'fuelType',
             'transmission', 'engineCapacity', 'registeredCity', 'ownerName'
         ];
-        // Add a sample row for guidance
         const sampleData = [{
             name: 'Ambulances', callsign: 'HY-999', model: 'Toyota Hiace',
             year: 2022, mileage: 15000, status: 'OnRoad Fleet',
@@ -386,8 +386,6 @@ export default function VehicleProfiles() {
         XLSX.utils.book_append_sheet(wb, ws, 'Vehicles');
         XLSX.writeFile(wb, 'vehicles_template.xlsx');
     };
-
-    // --- NEW: Function to handle the file upload ---
     const handleBulkUpload = async () => {
         if (!uploadFile) {
             alert('Please select a file to upload.');
@@ -398,17 +396,38 @@ export default function VehicleProfiles() {
         uploadFormData.append('file', uploadFile);
 
         try {
-            // NOTE: This requires a new backend endpoint: POST /api/vehicles/bulk-upload
-            await api.post('/vehicles/bulk-upload', uploadFormData, {
+            const response = await api.post('/vehicles/bulk-upload', uploadFormData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            alert('Bulk upload successful! New vehicles have been added.');
+
+            // Show detailed success message
+            alert(`Bulk upload successful! ${response.data.message}`);
+
+            if (response.data.errors && response.data.errors.length > 0) {
+                console.log('Upload errors:', response.data.errors);
+                // You can show errors in a more detailed way if needed
+                if (response.data.errors.length > 0) {
+                    alert(`Some errors occurred:\n${response.data.errors.slice(0, 5).join('\n')}${response.data.errors.length > 5 ? '\n... and more' : ''}`);
+                }
+            }
+
             setShowBulkModal(false);
             setUploadFile(null);
-            fetchData(); // Refresh data after upload
+            fetchData(); // Refresh the data
         } catch (error) {
             console.error('Error during bulk upload:', error);
-            alert(`Upload failed: ${error.response?.data?.message || 'An error occurred. Make sure the backend supports this feature.'}`);
+            let errorMessage = error.response?.data?.message || 'An error occurred.';
+
+            // Show detailed error information
+            if (error.response?.data?.details) {
+                if (Array.isArray(error.response.data.details)) {
+                    errorMessage += `\nDetails:\n${error.response.data.details.slice(0, 5).join('\n')}`;
+                } else {
+                    errorMessage += `\nDetails: ${error.response.data.details}`;
+                }
+            }
+
+            alert(`Upload failed: ${errorMessage}`);
         } finally {
             setIsUploading(false);
         }
@@ -455,7 +474,7 @@ export default function VehicleProfiles() {
                         ))}
                     </select>
                 </div>
-                {selectedStation && stationData?.vehicles.length > 0 && (
+                {selectedStation && callsignOptions.length > 0 && (
                     <div className="flex-1 min-w-[250px] max-w-sm">
                         <label htmlFor="vehicle-detail-select" className="block text-sm font-medium text-gray-700 mb-2">Select Vehicle by Callsign</label>
                         <select
@@ -465,7 +484,7 @@ export default function VehicleProfiles() {
                             value={selectedVehicleId}
                         >
                             <option value="">-- Select a Vehicle to Manage --</option>
-                            {stationData.vehicles.map(vehicle => (
+                            {callsignOptions.map(vehicle => (
                                 <option key={vehicle._id} value={vehicle._id}>
                                     {vehicle.callsign} - {vehicle.name}
                                 </option>
@@ -705,7 +724,6 @@ export default function VehicleProfiles() {
                     </div>
                 </div>
             )}
-            {/* --- NEW: Bulk Upload Modal --- */}
             {showBulkModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                     <div className="bg-white rounded-lg p-8 w-full max-w-lg shadow-xl">
