@@ -76,7 +76,7 @@ router.post('/', authenticate, upload.fields(imageUploadFields), async (req, res
   }
 });
 
-// --- UPDATED ROUTE FOR BULK UPLOAD WITH BETTER ERROR HANDLING ---
+// ENHANCED BULK UPLOAD ROUTE WITH DUPLICATE HANDLING AND STATUS FOCUS
 router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded.' });
@@ -91,12 +91,68 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
     };
 
     const columnMapping = {
-      'ownership': 'ownerName', 'model': 'model', 'year': 'year',
-      'call sign': 'callsign', 'reg#': 'registrationNo', 'engine no': 'engineNo',
-      'chassis no': 'chassisNo', 'name': 'name', 'station': 'registeredCity',
-      'engine capacity': 'engineCapacity', 'mileage': 'mileage',
-      'transimission': 'transmission', 'transmission': 'transmission',
-      'fuel type': 'fuelType', 'status': 'status',
+      'ownership': 'ownerName',
+      'model': 'model',
+      'year': 'year',
+      'call sign': 'callsign',
+      'reg#': 'registrationNo',
+      'engine no': 'engineNo',
+      'chassis no': 'chassisNo',
+      'name': 'name',
+      'station': 'registeredCity',
+      'engine capacity': 'engineCapacity',
+      'mileage': 'mileage',
+      'transimission': 'transmission',
+      'transmission': 'transmission',
+      'fuel type': 'fuelType',
+      'status': 'status',
+    };
+
+    // Comprehensive station mapping
+    const stationMapping = {
+      'Tando Muhammad Khan': 'Tando Muhammad Khan',
+      'Bathoro': 'Bathoro',
+      'Hyderabad': 'Hyderabad',
+      'Jamshoro': 'Sehwan',
+      'Tando Allah Yar': 'Tando Allahyar',
+      'Tando Allahyar': 'Tando Allahyar',
+      'Dadu': 'Dadu',
+      'Matiari': 'Matiari',
+      'Matiyari': 'Matiari',
+      'Sanghar': 'Sanghar',
+      'Sehwan': 'Sehwan',
+      'Qazi Ahmed': 'Qazi Ahmed',
+      'qazi ahmed': 'Qazi Ahmed',
+      'Naushahro Feroze': 'Naushahro Feroze',
+      'TAY': 'Tando Allahyar'
+    };
+
+    // Priority status mapping (higher number = higher priority for duplicates)
+    const statusPriority = {
+      'Insurance Claim': 3,
+      'Mechanical Maintenance': 2,
+      'OnRoad Fleet': 1
+    };
+
+    // Callsign to station mapping for fallback
+    const callsignToStationMap = {
+      'TH-259': 'Tando Muhammad Khan', 'TH-260': 'Tando Muhammad Khan', 'TH-263': 'Tando Muhammad Khan',
+      'SU-271': 'Bathoro', 'SU-276': 'Tando Muhammad Khan', 'SU-389': 'Tando Muhammad Khan',
+      'HY-292': 'Hyderabad', 'HY-293': 'Hyderabad', 'HY-294': 'Hyderabad', 'HY-295': 'Hyderabad',
+      'HY-296': 'Hyderabad', 'HY-297': 'Hyderabad', 'HY-298': 'Hyderabad', 'HY-299': 'Hyderabad',
+      'HY-300': 'Hyderabad', 'HY-301': 'Hyderabad', 'HY-302': 'Hyderabad', 'HY-303': 'Hyderabad',
+      'HY-317': 'Hyderabad', 'HY-318': 'Hyderabad', 'HY-319': 'Hyderabad',
+      'MK-359': 'Sehwan', 'MK-360': 'Sehwan', 'MK-361': 'Sehwan', 'MK-362': 'Sehwan', 'MK-363': 'Sehwan',
+      'JA-391': 'Dadu', 'JA-393': 'Tando Allahyar', 'JA-394': 'Tando Allahyar', 'JA-397': 'Tando Allahyar', 'JA-399': 'Tando Allahyar',
+      'MA-412': 'Matiari', 'MA-413': 'Matiari', 'MA-414': 'Matiari', 'MA-415': 'Matiari', 'MA-416': 'Matiari',
+      'M-07': 'Hyderabad', 'M-24': 'Sehwan',
+      'DA-420': 'Dadu', 'DA-421': 'Dadu',
+      'SG-422': 'Sanghar', 'SG-423': 'Sanghar', 'SG-424': 'Sanghar',
+      'HY-446': 'Hyderabad', 'JA-447': 'Sehwan', 'SB-448': 'Qazi Ahmed', 'JA-451': 'Sehwan', 'JA-452': 'Sehwan',
+      'DA-453': 'Dadu', 'JA-454': 'Sehwan', 'DA-455': 'Dadu', 'DA-456': 'Dadu', 'MA-457': 'Matiari',
+      'NF-460': 'Naushahro Feroze', 'SG-461': 'Sanghar', 'SG-463': 'Sanghar', 'JA-464': 'Sehwan',
+      'SB-468': 'Qazi Ahmed', 'SG-470': 'Sanghar', 'SG-471': 'Sanghar', 'TA-480': 'Tando Allahyar',
+      'DA-512': 'Dadu', 'SB-511': 'Qazi Ahmed'
     };
 
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
@@ -111,7 +167,7 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
     let successCount = 0;
     let errorCount = 0;
     const errors = [];
-    const processedVehicles = [];
+    const processedVehicles = new Map(); // Use Map to handle duplicates by callsign
 
     console.log(`Processing ${data.length} rows from Excel file`);
 
@@ -119,6 +175,7 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
       try {
         const mappedRow = {};
 
+        // Map all columns
         for (const key in row) {
           const normalizedKey = key.trim().toLowerCase();
           const schemaKey = columnMapping[normalizedKey];
@@ -134,38 +191,46 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
           continue;
         }
 
-        // Check if callsign already exists in database
-        const existingVehicle = await Vehicle.findOne({ callsign: String(mappedRow.callsign) });
-        if (existingVehicle) {
-          errors.push(`Row ${index + 2}: Callsign "${mappedRow.callsign}" already exists`);
-          errorCount++;
-          continue;
+        const callsign = String(mappedRow.callsign).trim();
+
+        // Map station names
+        let station = mappedRow.registeredCity ? String(mappedRow.registeredCity).trim() : '';
+        if (station && stationMapping[station]) {
+          station = stationMapping[station];
+        } else if (!station && callsignToStationMap[callsign]) {
+          station = callsignToStationMap[callsign];
+        } else {
+          station = 'Hyderabad'; // Default station
         }
 
         const vehicleData = {
           name: String(mappedRow.name),
-          callsign: String(mappedRow.callsign),
+          callsign: callsign,
           model: String(mappedRow.model),
           year: Number(mappedRow.year),
           mileage: mappedRow.mileage ? Number(mappedRow.mileage) : 0,
-          status: mappedRow.status || 'OnRoad Fleet',
-          chassisNo: mappedRow.chassisNo ? String(mappedRow.chassisNo) : undefined,
-          engineNo: mappedRow.engineNo ? String(mappedRow.engineNo) : undefined,
-          registrationNo: mappedRow.registrationNo ? String(mappedRow.registrationNo) : undefined,
+          status: 'OnRoad Fleet', // Default
+          chassisNo: mappedRow.chassisNo ? String(mappedRow.chassisNo) : '',
+          engineNo: mappedRow.engineNo ? String(mappedRow.engineNo) : '',
+          registrationNo: mappedRow.registrationNo ? String(mappedRow.registrationNo) : '',
           fuelType: mappedRow.fuelType || 'Petrol',
           transmission: mappedRow.transmission || 'Manual',
-          engineCapacity: mappedRow.engineCapacity ? String(mappedRow.engineCapacity) : undefined,
-          registeredCity: mappedRow.registeredCity ? String(mappedRow.registeredCity) : undefined,
-          ownerName: mappedRow.ownerName ? String(mappedRow.ownerName) : undefined,
+          engineCapacity: mappedRow.engineCapacity ? String(mappedRow.engineCapacity) : '',
+          registeredCity: station,
+          ownerName: mappedRow.ownerName ? String(mappedRow.ownerName) : 'PDMA',
         };
 
-        // Status mapping for your Excel file
-        if (vehicleData.status === 'On-Road') vehicleData.status = 'OnRoad Fleet';
-        if (vehicleData.status === 'Off-Road') vehicleData.status = 'OffRoad Fleet';
-        if (vehicleData.status === 'Mechanical Maintenance') vehicleData.status = 'Mechanical Maintenance';
-        if (vehicleData.status === 'Insurance Claim') vehicleData.status = 'Insurance Claim';
+        // ENHANCED STATUS MAPPING - Only 3 statuses as required
+        const excelStatus = (mappedRow.status || '').toString().toLowerCase().trim();
+        if (excelStatus.includes('on-road')) {
+          vehicleData.status = 'OnRoad Fleet';
+        } else if (excelStatus.includes('mechanical maintenance') || excelStatus.includes('mechanical')) {
+          vehicleData.status = 'Mechanical Maintenance';
+        } else if (excelStatus.includes('insurance claim') || excelStatus.includes('insurance')) {
+          vehicleData.status = 'Insurance Claim';
+        }
 
-        // SMART IMAGE ASSIGNMENT LOGIC
+        // Smart image assignment
         const vehicleNameLower = vehicleData.name.toLowerCase();
         let mainImagePath = null;
 
@@ -183,34 +248,83 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
           vehicleData.images = { main: mainImagePath };
         }
 
-        processedVehicles.push(vehicleData);
-        successCount++;
+        // DUPLICATE HANDLING: Keep the record with highest priority status
+        if (processedVehicles.has(callsign)) {
+          const existingVehicle = processedVehicles.get(callsign);
+          const currentPriority = statusPriority[vehicleData.status] || 0;
+          const existingPriority = statusPriority[existingVehicle.status] || 0;
+
+          if (currentPriority > existingPriority) {
+            console.log(`🔄 Updating duplicate ${callsign} from "${existingVehicle.status}" to "${vehicleData.status}" (higher priority)`);
+            processedVehicles.set(callsign, vehicleData);
+          } else {
+            console.log(`⏩ Keeping existing ${callsign} with status "${existingVehicle.status}" (higher/equal priority)`);
+          }
+        } else {
+          processedVehicles.set(callsign, vehicleData);
+          successCount++;
+          console.log(`✓ Processed: ${callsign} - ${vehicleData.name} - ${vehicleData.status} - ${station}`);
+        }
 
       } catch (rowError) {
         errors.push(`Row ${index + 2}: ${rowError.message}`);
         errorCount++;
+        console.error(`✗ Error at row ${index + 2}:`, rowError);
       }
     }
 
-    console.log(`Successfully processed ${successCount} vehicles, ${errorCount} errors`);
+    const finalVehicles = Array.from(processedVehicles.values());
+    console.log(`Successfully processed ${finalVehicles.length} unique vehicles for insertion`);
 
-    if (processedVehicles.length === 0) {
+    if (finalVehicles.length === 0) {
       return res.status(400).json({
         message: 'No valid vehicle records could be processed.',
         details: errors
       });
     }
 
-    // Insert all valid vehicles
-    const result = await Vehicle.insertMany(processedVehicles, { ordered: false });
+    // Insert vehicles with duplicate handling
+    let insertedCount = 0;
+    let updatedCount = 0;
+    const insertionErrors = [];
 
-    console.log(`Successfully inserted ${result.length} vehicles into database`);
+    for (const vehicle of finalVehicles) {
+      try {
+        // Use upsert to handle duplicates - update if exists, insert if not
+        const result = await Vehicle.findOneAndUpdate(
+          { callsign: vehicle.callsign },
+          vehicle,
+          {
+            upsert: true,
+            new: true,
+            runValidators: true
+          }
+        );
+
+        if (result.$isNew) {
+          insertedCount++;
+          console.log(`✅ Inserted: ${vehicle.callsign}`);
+        } else {
+          updatedCount++;
+          console.log(`🔄 Updated: ${vehicle.callsign}`);
+        }
+      } catch (insertError) {
+        insertionErrors.push(`Failed to insert ${vehicle.callsign}: ${insertError.message}`);
+        console.error(`✗ Insertion error for ${vehicle.callsign}:`, insertError);
+      }
+    }
+
+    console.log(`Successfully inserted ${insertedCount} new vehicles and updated ${updatedCount} existing vehicles`);
 
     res.status(201).json({
-      message: `Bulk upload completed. ${result.length} vehicles were added successfully. ${errorCount} rows had errors.`,
-      createdCount: result.length,
-      errorCount: errorCount,
-      errors: errors.slice(0, 10) // Return first 10 errors to avoid overwhelming response
+      message: `Bulk upload completed successfully.`,
+      summary: {
+        totalProcessed: successCount,
+        newInserted: insertedCount,
+        existingUpdated: updatedCount,
+        errors: errorCount
+      },
+      details: `Processed ${finalVehicles.length} unique vehicles from Excel. ${insertedCount} new vehicles inserted, ${updatedCount} existing vehicles updated.`
     });
 
   } catch (error) {
@@ -218,7 +332,7 @@ router.post('/bulk-upload', authenticate, excelUpload.single('file'), async (req
 
     if (error.code === 11000) {
       return res.status(400).json({
-        message: 'Bulk upload failed due to duplicate callsigns. Please ensure all callsigns in the Excel file are unique.',
+        message: 'Duplicate callsigns found during upload.',
         details: error.message
       });
     }

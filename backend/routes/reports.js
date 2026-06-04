@@ -6,26 +6,19 @@ import FuelRecord from '../models/FuelRecord.js';
 import Maintenance from '../models/Maintenance.js';
 import fs from 'fs';
 import path from 'path';
-// --- FIX START: Import 'fileURLToPath' to get the correct directory path ---
 import { fileURLToPath } from 'url';
 
 const router = express.Router();
 
-// --- FIX START: Define __dirname for ES Modules to create a stable path ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// --- FIX END ---
 
 
 // --- GET DOCUMENT LIST ---
 router.get('/available-documents', authenticate, (req, res) => {
   try {
-    // --- FIX START: Construct the correct path from the backend to the frontend's public folder ---
-    // This goes up two directories (from /backend/routes to /) and then into /frontend/public/documents
     const documentsPath = path.join(__dirname, '..', '..', 'frontend', 'public', 'documents');
-    // --- FIX END ---
 
-    // Add a check to ensure the directory actually exists before trying to read it
     if (!fs.existsSync(documentsPath)) {
       console.error(`Error: The directory does not exist at path: ${documentsPath}`);
       return res.status(404).json({ message: 'Documents directory not found on the server.' });
@@ -97,7 +90,7 @@ router.post('/generate/:type', authenticate, async (req, res) => {
 
       case 'maintenance-costs':
         name = 'Maintenance Cost Summary';
-        const maintenanceData = await Maintenance.find({ date: { $gte: startDate, $lt: endDate } })
+        const maintenanceData = await Maintenance.find({ dateIn: { $gte: startDate, $lt: endDate } })
           .populate('vehicle', 'name');
 
         const allVehiclesForCount = await Vehicle.find();
@@ -108,7 +101,8 @@ router.post('/generate/:type', authenticate, async (req, res) => {
 
         const reportData = {};
 
-        for (const vehicleName in vehicleCounts) {
+        // Initialize report data structure for all known vehicle types
+        Object.keys(vehicleCounts).forEach(vehicleName => {
           reportData[vehicleName] = {
             preventiveCost: 0,
             correctiveCost: 0,
@@ -116,20 +110,19 @@ router.post('/generate/:type', authenticate, async (req, res) => {
             vehicleCount: vehicleCounts[vehicleName],
             avgCostPerVehicle: 0,
           };
-        }
+        });
 
         maintenanceData.forEach(record => {
-          if (!record.vehicle) return;
+          if (!record.vehicle || !reportData[record.vehicle.name]) return;
 
           const vehicleName = record.vehicle.name;
-          const cost = (record.partsCost || 0) + (record.otherCost || 0);
+          // --- FIX: Correctly sum all cost fields from the Maintenance model ---
+          const cost = (record.electricalCost || 0) + (record.fabricationCost || 0) + (record.insuranceCost || 0) + (record.otherCost || 0);
 
-          if (reportData[vehicleName]) {
-            if (record.category === 'Preventive') {
-              reportData[vehicleName].preventiveCost += cost;
-            } else if (record.category === 'Corrective') {
-              reportData[vehicleName].correctiveCost += cost;
-            }
+          if (record.category === 'Preventive') {
+            reportData[vehicleName].preventiveCost += cost;
+          } else if (record.category === 'Corrective') {
+            reportData[vehicleName].correctiveCost += cost;
           }
         });
 
