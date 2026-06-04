@@ -113,4 +113,4 @@ The backend exposes these main routes:
 
 ## License
 
-This project does not currently specify a license.
+SIEHS - Sindh Integrated & Emergency Health Services
